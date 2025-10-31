@@ -122,12 +122,38 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
       };
     }
 
-    const data = await response.json();
-    const products: ShopifyProduct[] = data.products || [];
+    // Fetch all products using pagination (Shopify limits to 250 per page)
+    let allProducts: ShopifyProduct[] = [];
+    let page = 1;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const paginatedUrl = `${actualUrl}/products.json?limit=250&page=${page}`;
+      const pageResponse = page === 1 ? response : await fetch(paginatedUrl);
+      
+      if (!pageResponse.ok) {
+        break;
+      }
+      
+      const data = await pageResponse.json();
+      const products: ShopifyProduct[] = data.products || [];
+      
+      if (products.length === 0) {
+        hasMore = false;
+      } else {
+        allProducts = allProducts.concat(products);
+        page++;
+        
+        // If we got less than 250 products, this is the last page
+        if (products.length < 250) {
+          hasMore = false;
+        }
+      }
+    }
 
     const zeroPriceProducts = [];
 
-    for (const product of products) {
+    for (const product of allProducts) {
       for (const variant of product.variants) {
         const price = parseFloat(variant.price);
         // Filter: only include zero-price products that are in stock
@@ -155,7 +181,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
       storeUrl: actualUrl,
       storeName,
       success: true,
-      productsFound: products.length,
+      productsFound: allProducts.length,
       zeroPriceProducts,
       scannedAt,
     };
