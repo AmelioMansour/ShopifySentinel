@@ -6,6 +6,7 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 ## Features
 - `/scan` - Scan a single Shopify store for zero-price products with pagination
 - `/scanbatch` - Scan multiple Shopify stores at once (text file upload, max 25 URLs)
+- `/scansuperbulk` - Scan up to 200 Shopify stores at once (text file upload, max 200 URLs)
 - **Real-Time Progress Bar** - Live updates showing scan progress during batch operations
 - **Headless Shopify Auto-Detection** - Automatically tries `shop.` subdomain for headless stores
 - **Add-to-Cart Links** - Direct links to add products to cart instead of product pages
@@ -43,6 +44,7 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 ```
 /scan url:https://store-name.myshopify.com
 /scanbatch file:[upload .txt file with one URL per line, max 25 URLs]
+/scansuperbulk file:[upload .txt file with one URL per line, max 200 URLs]
 ```
 
 **Example batch file format (stores.txt):**
@@ -51,6 +53,11 @@ store1.myshopify.com
 store2.myshopify.com
 shop.hatch.co
 ```
+
+**When to use each command:**
+- `/scan` - Quick single store check
+- `/scanbatch` - Small batch of 1-25 stores
+- `/scansuperbulk` - Large batch of 26-200 stores
 
 ### Example Scan Result
 
@@ -123,6 +130,8 @@ The bot starts automatically when the server runs. It registers slash commands o
 - ✅ Added real-time progress bar for batch scans showing current store and percentage complete
 - ✅ Implemented interactive store navigation for batch results with Previous/Next buttons to browse stores
 - ✅ Optimized batch scanning with parallel processing - scans 5 stores simultaneously for 5x faster performance
+- ✅ Fixed bulk cart link response message splitting to handle Discord's 2000 character limit
+- ✅ Added `/scansuperbulk` command for scanning up to 200 stores at once
 
 ## Future Enhancements
 - Historical tracking of price changes
