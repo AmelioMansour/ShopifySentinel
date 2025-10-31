@@ -112,6 +112,12 @@ const batchResultsData = new Map<string, {
   totalZeroPriceProducts: number
 }>();
 
+// Store batch navigation state (storeIndex and productPage per user)
+const batchNavState = new Map<string, {
+  storeIndex: number,
+  productPage: number
+}>();
+
 async function handleScanCommand(interaction: ChatInputCommandInteraction) {
   const url = interaction.options.getString('url', true);
   
@@ -200,9 +206,10 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
     // Store batch results for navigation
     const batchDataId = `batch_${interaction.user.id}_${Date.now()}`;
     batchResultsData.set(batchDataId, batchResponse);
+    batchNavState.set(batchDataId, { storeIndex: 0, productPage: 0 });
     
     // Show summary and first store with results
-    const { embed, components } = createBatchNavigationEmbed(batchResponse, 0, batchDataId);
+    const { embed, components } = createBatchNavigationEmbed(batchResponse, 0, 0, batchDataId);
     await interaction.editReply({ embeds: [embed], components });
   } catch (error) {
     console.error('Error processing file:', error);
@@ -336,7 +343,7 @@ async function handleButtonInteraction(interaction: any) {
   
   // Handle batch navigation
   if (dataId.startsWith('batch_')) {
-    if (!batchResultsData.has(dataId)) {
+    if (!batchResultsData.has(dataId) || !batchNavState.has(dataId)) {
       await interaction.reply({ 
         content: '❌ This interaction has expired. Please run the scan command again.', 
         ephemeral: true 
@@ -345,20 +352,41 @@ async function handleButtonInteraction(interaction: any) {
     }
     
     const batchData = batchResultsData.get(dataId)!;
+    const navState = batchNavState.get(dataId)!;
+    const storesWithProducts = batchData.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
     
-    if (action === 'batchprev' || action === 'batchnext') {
-      const currentStoreIndex = parseInt(parts[2]);
-      let newStoreIndex = currentStoreIndex;
+    if (action === 'batchstoreprev' || action === 'batchstorenext') {
+      let newStoreIndex = navState.storeIndex;
       
-      const storesWithProducts = batchData.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
-      
-      if (action === 'batchprev') {
-        newStoreIndex = Math.max(0, currentStoreIndex - 1);
-      } else if (action === 'batchnext') {
-        newStoreIndex = Math.min(storesWithProducts.length - 1, currentStoreIndex + 1);
+      if (action === 'batchstoreprev') {
+        newStoreIndex = Math.max(0, navState.storeIndex - 1);
+      } else if (action === 'batchstorenext') {
+        newStoreIndex = Math.min(storesWithProducts.length - 1, navState.storeIndex + 1);
       }
       
-      const { embed, components } = createBatchNavigationEmbed(batchData, newStoreIndex, dataId);
+      // Reset to first product page when changing stores
+      navState.storeIndex = newStoreIndex;
+      navState.productPage = 0;
+      
+      const { embed, components } = createBatchNavigationEmbed(batchData, newStoreIndex, 0, dataId);
+      await interaction.update({ embeds: [embed], components });
+      return;
+    }
+    
+    if (action === 'batchprodprev' || action === 'batchprodnext') {
+      const currentStore = storesWithProducts[navState.storeIndex];
+      const totalProductPages = Math.ceil(currentStore.zeroPriceProducts.length / ITEMS_PER_PAGE);
+      let newProductPage = navState.productPage;
+      
+      if (action === 'batchprodprev') {
+        newProductPage = Math.max(0, navState.productPage - 1);
+      } else if (action === 'batchprodnext') {
+        newProductPage = Math.min(totalProductPages - 1, navState.productPage + 1);
+      }
+      
+      navState.productPage = newProductPage;
+      
+      const { embed, components } = createBatchNavigationEmbed(batchData, navState.storeIndex, newProductPage, dataId);
       await interaction.update({ embeds: [embed], components });
       return;
     }
@@ -366,9 +394,7 @@ async function handleButtonInteraction(interaction: any) {
     if (action === 'batchbulk') {
       await interaction.deferReply({ ephemeral: true });
       
-      const storeIndex = parseInt(parts[2]);
-      const storesWithProducts = batchData.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
-      const store = storesWithProducts[storeIndex];
+      const store = storesWithProducts[navState.storeIndex];
       
       const urls = createBulkAddToCartUrls(store.zeroPriceProducts, store.storeUrl);
       
@@ -495,6 +521,7 @@ function createScanResultEmbed(result: ScanResult): EmbedBuilder {
 function createBatchNavigationEmbed(
   batchResponse: BatchScanResponse,
   storeIndex: number,
+  productPage: number,
   batchDataId: string
 ): { embed: EmbedBuilder, components: ActionRowBuilder<ButtonBuilder>[] } {
   const storesWithProducts = batchResponse.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
@@ -532,7 +559,10 @@ function createBatchNavigationEmbed(
   
   // Show current store details
   const currentStore = storesWithProducts[storeIndex];
-  const productsToShow = currentStore.zeroPriceProducts.slice(0, ITEMS_PER_PAGE);
+  const totalProductPages = Math.ceil(currentStore.zeroPriceProducts.length / ITEMS_PER_PAGE);
+  const start = productPage * ITEMS_PER_PAGE;
+  const end = Math.min(start + ITEMS_PER_PAGE, currentStore.zeroPriceProducts.length);
+  const productsToShow = currentStore.zeroPriceProducts.slice(start, end);
   
   // Add store name prominently in description
   embed.setDescription(`## 🏪 ${currentStore.storeName}\n*Store ${storeIndex + 1} of ${storesWithProducts.length}*`);
@@ -549,54 +579,70 @@ function createBatchNavigationEmbed(
     inline: true
   });
   
-  // Show product details
+  // Show product details with green FREE indicator
   productsToShow.forEach((product, index) => {
+    const actualIndex = start + index + 1;
     embed.addFields({
-      name: `${index + 1}. ${product.productTitle}`,
-      value: `Variant: ${product.variantTitle}\nPrice: $${product.price}\n[🛒 Add to Cart](${product.productUrl})`,
+      name: `${actualIndex}. ${product.productTitle}`,
+      value: `${product.variantTitle} • 🟢 **FREE**\n[🛒 Add to Cart](${product.productUrl})`,
       inline: false
     });
   });
   
-  if (currentStore.zeroPriceProducts.length > ITEMS_PER_PAGE) {
-    embed.addFields({
-      name: 'More Products',
-      value: `... and ${currentStore.zeroPriceProducts.length - ITEMS_PER_PAGE} more products in this store`,
-      inline: false
-    });
-  }
-  
-  embed.setFooter({ text: `Viewing store ${storeIndex + 1} of ${storesWithProducts.length} stores with products` });
+  embed.setFooter({ text: `Store ${storeIndex + 1}/${storesWithProducts.length} • Products ${start + 1}-${end} of ${currentStore.zeroPriceProducts.length}` });
   
   // Create navigation buttons
   const components: ActionRowBuilder<ButtonBuilder>[] = [];
   
   // Store navigation row
-  const navRow = new ActionRowBuilder<ButtonBuilder>();
+  const storeNavRow = new ActionRowBuilder<ButtonBuilder>();
   
-  navRow.addComponents(
+  storeNavRow.addComponents(
     new ButtonBuilder()
-      .setCustomId(`batchprev|${batchDataId}|${storeIndex}`)
+      .setCustomId(`batchstoreprev|${batchDataId}`)
       .setLabel('◀ Previous Store')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(storeIndex === 0)
   );
   
-  navRow.addComponents(
+  storeNavRow.addComponents(
     new ButtonBuilder()
-      .setCustomId(`batchnext|${batchDataId}|${storeIndex}`)
+      .setCustomId(`batchstorenext|${batchDataId}`)
       .setLabel('Next Store ▶')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(storeIndex >= storesWithProducts.length - 1)
   );
   
-  components.push(navRow);
+  components.push(storeNavRow);
+  
+  // Product navigation row (only show if more than one page of products)
+  if (totalProductPages > 1) {
+    const productNavRow = new ActionRowBuilder<ButtonBuilder>();
+    
+    productNavRow.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`batchprodprev|${batchDataId}`)
+        .setLabel('◀ Previous Products')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(productPage === 0)
+    );
+    
+    productNavRow.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`batchprodnext|${batchDataId}`)
+        .setLabel('Next Products ▶')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(productPage >= totalProductPages - 1)
+    );
+    
+    components.push(productNavRow);
+  }
   
   // Bulk add-to-cart button for current store
   const bulkRow = new ActionRowBuilder<ButtonBuilder>();
   bulkRow.addComponents(
     new ButtonBuilder()
-      .setCustomId(`batchbulk|${batchDataId}|${storeIndex}`)
+      .setCustomId(`batchbulk|${batchDataId}`)
       .setLabel('🛒 Get Bulk Cart Links for This Store')
       .setStyle(ButtonStyle.Success)
   );
