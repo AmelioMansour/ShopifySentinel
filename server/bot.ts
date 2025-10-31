@@ -34,6 +34,8 @@ export async function startBot() {
             await handleScanCommand(interaction);
           } else if (interaction.commandName === 'scanbatch') {
             await handleScanBatchCommand(interaction);
+          } else if (interaction.commandName === 'scansuperbulk') {
+            await handleScanSuperBulkCommand(interaction);
           }
         } else if (interaction.isButton()) {
           await handleButtonInteraction(interaction);
@@ -77,6 +79,14 @@ async function registerCommands() {
       .addAttachmentOption(option =>
         option.setName('file')
           .setDescription('Text file with store URLs (one per line, max 25)')
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName('scansuperbulk')
+      .setDescription('Scan up to 200 Shopify stores for $0.00 products')
+      .addAttachmentOption(option =>
+        option.setName('file')
+          .setDescription('Text file with store URLs (one per line, max 200)')
           .setRequired(true)
       ),
   ].map(command => command.toJSON());
@@ -153,6 +163,18 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 }
 
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
+  await handleBatchScan(interaction, 25, 'Batch');
+}
+
+async function handleScanSuperBulkCommand(interaction: ChatInputCommandInteraction) {
+  await handleBatchScan(interaction, 200, 'Super Bulk');
+}
+
+async function handleBatchScan(
+  interaction: ChatInputCommandInteraction, 
+  maxUrls: number,
+  scanType: string
+) {
   const attachment = interaction.options.getAttachment('file', true);
 
   // Defer reply first
@@ -182,9 +204,9 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
       return;
     }
 
-    if (urls.length > 25) {
+    if (urls.length > maxUrls) {
       await interaction.editReply({ 
-        content: `❌ Too many URLs! Found ${urls.length} URLs but maximum is 25. Please reduce the number of stores in your file.` 
+        content: `❌ Too many URLs! Found ${urls.length} URLs but maximum is ${maxUrls}. Please reduce the number of stores in your file.` 
       });
       return;
     }
@@ -193,7 +215,7 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
     const onProgress = async (current: number, total: number, storeName: string) => {
       const progressBar = createProgressBar(current, total);
       const embed = new EmbedBuilder()
-        .setTitle('🔄 Batch Scan in Progress')
+        .setTitle(`🔄 ${scanType} Scan in Progress`)
         .setColor(0x3b82f6)
         .setDescription(`Scanning store **${current}** of **${total}**\n\n${progressBar}\n\nCurrent: \`${storeName}\``)
         .setTimestamp();
