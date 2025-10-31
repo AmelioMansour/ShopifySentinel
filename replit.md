@@ -53,6 +53,8 @@ shop.hatch.co
 ```
 
 ### Example Scan Result
+
+**Single Store Scan (`/scan`):**
 The bot returns a paginated embed showing:
 - Store name
 - Number of in-stock zero-price products found
@@ -61,6 +63,14 @@ The bot returns a paginated embed showing:
 - Page navigation buttons (Previous/Next)
 - Bulk add-to-cart button for all products
 - Timestamp of scan
+
+**Batch Scan (`/scanbatch`):**
+The bot returns an interactive summary with store navigation:
+- Overall scan statistics (total stores, success/failed counts, total products found)
+- Navigate through each store with Previous/Next Store buttons
+- Each store shows up to 5 products with details and add-to-cart links
+- Bulk add-to-cart button for each store
+- Footer showing current store position (e.g., "Viewing store 2 of 5 stores with products")
 
 ### Headless Shopify Detection
 For stores like hatch.co that use headless Shopify:
@@ -108,10 +118,11 @@ The bot starts automatically when the server runs. It registers slash commands o
 - ✅ Fixed product scanning pagination - now scans entire store catalogs (250 products per page)
 - ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
 - ✅ Added real-time progress bar for batch scans showing current store and percentage complete
+- ✅ Implemented interactive store navigation for batch results with Previous/Next buttons to browse stores
 
 ## Future Enhancements
 - Historical tracking of price changes
 - Scheduled automated scans
 - Filtering by product type/vendor
 - Email notifications for new zero-price items
-- Batch scan pagination support
+- Product-level pagination within batch scan stores (currently shows first 5 products per store)

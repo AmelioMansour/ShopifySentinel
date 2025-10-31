@@ -103,6 +103,15 @@ const paginationData = new Map<string, {
   totalProducts: number 
 }>();
 
+// Store batch scan results for navigation
+const batchResultsData = new Map<string, {
+  results: ScanResult[],
+  totalStores: number,
+  successfulScans: number,
+  failedScans: number,
+  totalZeroPriceProducts: number
+}>();
+
 async function handleScanCommand(interaction: ChatInputCommandInteraction) {
   const url = interaction.options.getString('url', true);
   
@@ -188,8 +197,13 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
 
     const batchResponse = await scanMultipleStores(urls, onProgress);
     
-    const embeds = createBatchResultEmbeds(batchResponse);
-    await interaction.editReply({ embeds });
+    // Store batch results for navigation
+    const batchDataId = `batch_${interaction.user.id}_${Date.now()}`;
+    batchResultsData.set(batchDataId, batchResponse);
+    
+    // Show summary and first store with results
+    const { embed, components } = createBatchNavigationEmbed(batchResponse, 0, batchDataId);
+    await interaction.editReply({ embeds: [embed], components });
   } catch (error) {
     console.error('Error processing file:', error);
     await interaction.editReply({ 
@@ -320,6 +334,62 @@ async function handleButtonInteraction(interaction: any) {
   const action = parts[0];
   const dataId = parts[1];
   
+  // Handle batch navigation
+  if (dataId.startsWith('batch_')) {
+    if (!batchResultsData.has(dataId)) {
+      await interaction.reply({ 
+        content: '❌ This interaction has expired. Please run the scan command again.', 
+        ephemeral: true 
+      });
+      return;
+    }
+    
+    const batchData = batchResultsData.get(dataId)!;
+    
+    if (action === 'batchprev' || action === 'batchnext') {
+      const currentStoreIndex = parseInt(parts[2]);
+      let newStoreIndex = currentStoreIndex;
+      
+      const storesWithProducts = batchData.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
+      
+      if (action === 'batchprev') {
+        newStoreIndex = Math.max(0, currentStoreIndex - 1);
+      } else if (action === 'batchnext') {
+        newStoreIndex = Math.min(storesWithProducts.length - 1, currentStoreIndex + 1);
+      }
+      
+      const { embed, components } = createBatchNavigationEmbed(batchData, newStoreIndex, dataId);
+      await interaction.update({ embeds: [embed], components });
+      return;
+    }
+    
+    if (action === 'batchbulk') {
+      await interaction.deferReply({ ephemeral: true });
+      
+      const storeIndex = parseInt(parts[2]);
+      const storesWithProducts = batchData.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
+      const store = storesWithProducts[storeIndex];
+      
+      const urls = createBulkAddToCartUrls(store.zeroPriceProducts, store.storeUrl);
+      
+      let response = `🛒 **Bulk Add-to-Cart Links for ${store.storeName}**\n\n`;
+      response += `Found ${store.zeroPriceProducts.length} products. `;
+      
+      if (urls.length === 1) {
+        response += `All products fit in one URL:\n\n${urls[0]}`;
+      } else {
+        response += `Split into ${urls.length} URLs due to length:\n\n`;
+        urls.forEach((url, index) => {
+          response += `**Link ${index + 1}:**\n${url}\n\n`;
+        });
+      }
+      
+      await interaction.editReply({ content: response });
+      return;
+    }
+  }
+  
+  // Handle single scan pagination
   if (!paginationData.has(dataId)) {
     await interaction.reply({ 
       content: '❌ This interaction has expired. Please run the scan command again.', 
@@ -422,83 +492,121 @@ function createScanResultEmbed(result: ScanResult): EmbedBuilder {
   return embed;
 }
 
-function createBatchResultEmbeds(batchResponse: BatchScanResponse): EmbedBuilder[] {
-  const embeds: EmbedBuilder[] = [];
-
-  const summaryEmbed = new EmbedBuilder()
-    .setTitle('📊 Batch Scan Summary')
+function createBatchNavigationEmbed(
+  batchResponse: BatchScanResponse,
+  storeIndex: number,
+  batchDataId: string
+): { embed: EmbedBuilder, components: ActionRowBuilder<ButtonBuilder>[] } {
+  const storesWithProducts = batchResponse.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
+  
+  // Build summary embed
+  const embed = new EmbedBuilder()
+    .setTitle('📊 Batch Scan Results')
     .setColor(0x3b82f6)
     .addFields(
-      { name: 'Total Stores', value: batchResponse.totalStores.toString(), inline: true },
+      { name: 'Total Stores Scanned', value: batchResponse.totalStores.toString(), inline: true },
       { name: 'Successful Scans', value: batchResponse.successfulScans.toString(), inline: true },
       { name: 'Failed Scans', value: batchResponse.failedScans.toString(), inline: true },
-      { name: 'Zero-Price Products Found', value: batchResponse.totalZeroPriceProducts.toString(), inline: true }
+      { name: 'Total Zero-Price Products', value: batchResponse.totalZeroPriceProducts.toString(), inline: true }
     )
     .setTimestamp();
-
-  embeds.push(summaryEmbed);
-
-  const failedScans = batchResponse.results.filter(r => !r.success);
-  if (failedScans.length > 0) {
-    const errorEmbed = new EmbedBuilder()
-      .setTitle('❌ Failed Scans')
-      .setColor(0xef4444);
-
-    failedScans.slice(0, 5).forEach(result => {
-      errorEmbed.addFields({
-        name: result.storeName,
-        value: result.error || 'Unknown error',
-        inline: false
-      });
-    });
-
-    if (failedScans.length > 5) {
-      errorEmbed.addFields({
-        name: 'Additional Failures',
-        value: `... and ${failedScans.length - 5} more failed scans`,
-        inline: false
-      });
-    }
-
-    embeds.push(errorEmbed);
-  }
-
-  const resultsWithProducts = batchResponse.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
   
-  resultsWithProducts.slice(0, 3).forEach(result => {
-    const resultEmbed = new EmbedBuilder()
-      .setTitle(`🛍️ ${result.storeName}`)
-      .setColor(0x10b981)
-      .setDescription(`Found ${result.zeroPriceProducts.length} zero-price products`);
-
-    const products = result.zeroPriceProducts.slice(0, 3);
-    products.forEach((product, index) => {
-      resultEmbed.addFields({
-        name: `${index + 1}. ${product.productTitle}`,
-        value: `${product.variantTitle} - $${product.price}\n[View](${product.productUrl})`,
-        inline: false
+  // If no stores have products, show that message
+  if (storesWithProducts.length === 0) {
+    embed.setDescription('✅ Scan complete! No zero-price products found in any store.');
+    
+    const failedScans = batchResponse.results.filter(r => !r.success);
+    if (failedScans.length > 0) {
+      let errorText = '**Failed Stores:**\n';
+      failedScans.slice(0, 5).forEach(result => {
+        errorText += `• ${result.storeName}: ${result.error?.substring(0, 100) || 'Unknown error'}\n`;
       });
-    });
-
-    if (result.zeroPriceProducts.length > 3) {
-      resultEmbed.addFields({
-        name: 'More',
-        value: `... and ${result.zeroPriceProducts.length - 3} more products`,
-        inline: false
-      });
+      if (failedScans.length > 5) {
+        errorText += `... and ${failedScans.length - 5} more`;
+      }
+      embed.addFields({ name: '❌ Errors', value: errorText, inline: false });
     }
-
-    embeds.push(resultEmbed);
-  });
-
-  if (resultsWithProducts.length > 3) {
-    const moreEmbed = new EmbedBuilder()
-      .setColor(0x6366f1)
-      .setDescription(`📦 ${resultsWithProducts.length - 3} more stores have zero-price products`);
-    embeds.push(moreEmbed);
+    
+    return { embed, components: [] };
   }
-
-  return embeds;
+  
+  // Show current store details
+  const currentStore = storesWithProducts[storeIndex];
+  const productsToShow = currentStore.zeroPriceProducts.slice(0, ITEMS_PER_PAGE);
+  
+  embed.addFields({
+    name: '\u200B',
+    value: `**Store ${storeIndex + 1} of ${storesWithProducts.length}: ${currentStore.storeName}**`,
+    inline: false
+  });
+  
+  embed.addFields({
+    name: '🛍️ Zero-Price Products',
+    value: `Found ${currentStore.zeroPriceProducts.length} in-stock products`,
+    inline: true
+  });
+  
+  embed.addFields({
+    name: '📦 Total Products',
+    value: currentStore.productsFound.toString(),
+    inline: true
+  });
+  
+  // Show product details
+  productsToShow.forEach((product, index) => {
+    embed.addFields({
+      name: `${index + 1}. ${product.productTitle}`,
+      value: `Variant: ${product.variantTitle}\nPrice: $${product.price}\n[🛒 Add to Cart](${product.productUrl})`,
+      inline: false
+    });
+  });
+  
+  if (currentStore.zeroPriceProducts.length > ITEMS_PER_PAGE) {
+    embed.addFields({
+      name: 'More Products',
+      value: `... and ${currentStore.zeroPriceProducts.length - ITEMS_PER_PAGE} more products in this store`,
+      inline: false
+    });
+  }
+  
+  embed.setFooter({ text: `Viewing store ${storeIndex + 1} of ${storesWithProducts.length} stores with products` });
+  
+  // Create navigation buttons
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+  
+  // Store navigation row
+  const navRow = new ActionRowBuilder<ButtonBuilder>();
+  
+  navRow.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`batchprev|${batchDataId}|${storeIndex}`)
+      .setLabel('◀ Previous Store')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(storeIndex === 0)
+  );
+  
+  navRow.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`batchnext|${batchDataId}|${storeIndex}`)
+      .setLabel('Next Store ▶')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(storeIndex >= storesWithProducts.length - 1)
+  );
+  
+  components.push(navRow);
+  
+  // Bulk add-to-cart button for current store
+  const bulkRow = new ActionRowBuilder<ButtonBuilder>();
+  bulkRow.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`batchbulk|${batchDataId}|${storeIndex}`)
+      .setLabel('🛒 Get Bulk Cart Links for This Store')
+      .setStyle(ButtonStyle.Success)
+  );
+  
+  components.push(bulkRow);
+  
+  return { embed, components };
 }
 
 export async function stopBot() {
