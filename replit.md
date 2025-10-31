@@ -80,7 +80,9 @@ For stores like hatch.co that use headless Shopify:
 ### Error Handling
 - Invalid URLs
 - Network failures
-- Non-existent stores
+- Non-Shopify websites
+- Deactivated/temporarily unavailable Shopify stores
+- Headless Shopify auto-detection fallback
 - Rate limiting (future enhancement)
 
 ## Development

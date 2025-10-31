@@ -87,7 +87,18 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       
       if (response.status === 404) {
-        errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404. Please make sure you're scanning a valid Shopify store URL (e.g., store-name.myshopify.com).`;
+        // Check if it's a deactivated Shopify store
+        try {
+          const errorData = await response.json();
+          if (errorData.errors && errorData.errors === "Not Found") {
+            errorMessage = `This Shopify store appears to be deactivated or temporarily unavailable. The store exists but is not currently accessible.`;
+          } else {
+            errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404. Please make sure you're scanning a valid Shopify store URL (e.g., store-name.myshopify.com).`;
+          }
+        } catch {
+          // Not JSON response, likely not a Shopify store
+          errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404. Please make sure you're scanning a valid Shopify store URL (e.g., store-name.myshopify.com).`;
+        }
       }
       
       return {
