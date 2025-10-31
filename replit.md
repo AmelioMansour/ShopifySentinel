@@ -119,6 +119,43 @@ For stores like hatch.co that use headless Shopify:
 ## Development
 The bot starts automatically when the server runs. It registers slash commands on startup and listens for interactions.
 
+## Deployment
+
+### Prerequisites
+Before deploying, you need to configure your Discord bot token as a deployment secret.
+
+### Step 1: Add Discord Bot Token to Deployment Secrets
+1. Navigate to the **Deployments** pane in your Replit workspace
+2. Click on the **Configuration** tab
+3. Scroll to the **Secrets** section
+4. Click **Add Secret**
+5. Add the following secret:
+   - **Name:** `DISCORD_BOT_TOKEN`
+   - **Value:** Your Discord bot token (from the Discord Developer Portal)
+
+### Step 2: Deploy
+1. Click the **Deploy** button in the Deployments pane
+2. The server will start on port 5000 (configured automatically)
+3. Check deployment logs - you should see:
+   - `✅ Bot logged in as [YOUR BOT NAME]`
+   - `✅ Bot is running and listening for commands`
+
+### Graceful Degradation
+The application is designed to handle missing configuration gracefully:
+- If `DISCORD_BOT_TOKEN` is not set, the server will still start successfully
+- You'll see warning messages in the logs indicating the bot couldn't start
+- This allows you to deploy the Express server even if you're not ready to configure the Discord bot yet
+
+### Troubleshooting
+**Bot not responding to commands:**
+- Verify `DISCORD_BOT_TOKEN` is set correctly in deployment secrets
+- Check deployment logs for connection errors
+- Ensure your bot has proper permissions in your Discord server
+
+**Deployment fails:**
+- Check that the application is binding to `0.0.0.0:5000` (already configured)
+- Review deployment logs for specific error messages
+
 ## Recent Updates (October 31, 2025)
 - ✅ Implemented headless Shopify auto-detection (shop. subdomain)
 - ✅ Changed to add-to-cart links instead of product page links
