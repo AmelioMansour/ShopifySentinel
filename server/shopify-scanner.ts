@@ -51,11 +51,17 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
     const response = await fetch(productsUrl);
     
     if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      
+      if (response.status === 404) {
+        errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404. Please make sure you're scanning a valid Shopify store URL (e.g., store-name.myshopify.com).`;
+      }
+      
       return {
         storeUrl: normalizedUrl,
         storeName,
         success: false,
-        error: `HTTP ${response.status}: ${response.statusText}`,
+        error: errorMessage,
         productsFound: 0,
         zeroPriceProducts: [],
         scannedAt,
