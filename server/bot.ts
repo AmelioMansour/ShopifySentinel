@@ -534,11 +534,8 @@ function createBatchNavigationEmbed(
   const currentStore = storesWithProducts[storeIndex];
   const productsToShow = currentStore.zeroPriceProducts.slice(0, ITEMS_PER_PAGE);
   
-  embed.addFields({
-    name: '\u200B',
-    value: `**Store ${storeIndex + 1} of ${storesWithProducts.length}: ${currentStore.storeName}**`,
-    inline: false
-  });
+  // Add store name prominently in description
+  embed.setDescription(`## 🏪 ${currentStore.storeName}\n*Store ${storeIndex + 1} of ${storesWithProducts.length}*`);
   
   embed.addFields({
     name: '🛍️ Zero-Price Products',
