@@ -174,7 +174,19 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
       return;
     }
 
-    const batchResponse = await scanMultipleStores(urls);
+    // Create progress callback
+    const onProgress = async (current: number, total: number, storeName: string) => {
+      const progressBar = createProgressBar(current, total);
+      const embed = new EmbedBuilder()
+        .setTitle('🔄 Batch Scan in Progress')
+        .setColor(0x3b82f6)
+        .setDescription(`Scanning store **${current}** of **${total}**\n\n${progressBar}\n\nCurrent: \`${storeName}\``)
+        .setTimestamp();
+      
+      await interaction.editReply({ embeds: [embed] });
+    };
+
+    const batchResponse = await scanMultipleStores(urls, onProgress);
     
     const embeds = createBatchResultEmbeds(batchResponse);
     await interaction.editReply({ embeds });
@@ -184,6 +196,16 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
       content: '❌ Failed to read the file. Please make sure it\'s a valid text file with one URL per line.' 
     });
   }
+}
+
+function createProgressBar(current: number, total: number): string {
+  const percentage = Math.floor((current / total) * 100);
+  const filled = Math.floor((current / total) * 20); // 20 character bar
+  const empty = 20 - filled;
+  
+  const bar = '█'.repeat(filled) + '░'.repeat(empty);
+  
+  return `\`${bar}\` ${percentage}%`;
 }
 
 const ITEMS_PER_PAGE = 5;

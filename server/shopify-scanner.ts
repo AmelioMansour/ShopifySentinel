@@ -202,10 +202,19 @@ async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function scanMultipleStores(urls: string[]): Promise<BatchScanResponse> {
+export async function scanMultipleStores(
+  urls: string[], 
+  onProgress?: (current: number, total: number, storeName: string) => Promise<void>
+): Promise<BatchScanResponse> {
   const results: ScanResult[] = [];
   
   for (let i = 0; i < urls.length; i++) {
+    // Report progress before scanning
+    if (onProgress) {
+      const storeName = extractStoreName(urls[i]);
+      await onProgress(i + 1, urls.length, storeName);
+    }
+    
     const result = await scanShopifyStore(urls[i]);
     results.push(result);
     

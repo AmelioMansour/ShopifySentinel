@@ -6,6 +6,7 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 ## Features
 - `/scan` - Scan a single Shopify store for zero-price products with pagination
 - `/scanbatch` - Scan multiple Shopify stores at once (text file upload, max 25 URLs)
+- **Real-Time Progress Bar** - Live updates showing scan progress during batch operations
 - **Headless Shopify Auto-Detection** - Automatically tries `shop.` subdomain for headless stores
 - **Add-to-Cart Links** - Direct links to add products to cart instead of product pages
 - **Pagination** - Navigate through results with Previous/Next buttons (5 products per page)
@@ -106,6 +107,7 @@ The bot starts automatically when the server runs. It registers slash commands o
 - ✅ Added bulk add-to-cart functionality with URL splitting
 - ✅ Fixed product scanning pagination - now scans entire store catalogs (250 products per page)
 - ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
+- ✅ Added real-time progress bar for batch scans showing current store and percentage complete
 
 ## Future Enhancements
 - Historical tracking of price changes
