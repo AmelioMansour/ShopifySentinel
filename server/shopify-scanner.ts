@@ -75,9 +75,9 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
   }
   
   try {
-    const productsUrl = `${normalizedUrl}/products.json`;
-
-    let response = await fetch(productsUrl);
+    // Start with a test request to check if the store exists
+    const testUrl = `${normalizedUrl}/products.json?limit=1`;
+    let response = await fetch(testUrl);
     let actualUrl = normalizedUrl;
     
     // If 404, try headless Shopify pattern (shop. subdomain)
@@ -87,7 +87,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
       if (headlessUrl) {
         actualUrl = headlessUrl;
         storeName = extractStoreName(headlessUrl);
-        response = await fetch(`${headlessUrl}/products.json`);
+        response = await fetch(`${headlessUrl}/products.json?limit=1`);
       }
     }
     
@@ -129,7 +129,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
     
     while (hasMore) {
       const paginatedUrl = `${actualUrl}/products.json?limit=250&page=${page}`;
-      const pageResponse = page === 1 ? response : await fetch(paginatedUrl);
+      const pageResponse = await fetch(paginatedUrl);
       
       if (!pageResponse.ok) {
         break;
