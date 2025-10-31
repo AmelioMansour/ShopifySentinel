@@ -179,6 +179,31 @@ function createBatchResultEmbeds(batchResponse: BatchScanResponse): EmbedBuilder
 
   embeds.push(summaryEmbed);
 
+  const failedScans = batchResponse.results.filter(r => !r.success);
+  if (failedScans.length > 0) {
+    const errorEmbed = new EmbedBuilder()
+      .setTitle('❌ Failed Scans')
+      .setColor(0xef4444);
+
+    failedScans.slice(0, 5).forEach(result => {
+      errorEmbed.addFields({
+        name: result.storeName,
+        value: result.error || 'Unknown error',
+        inline: false
+      });
+    });
+
+    if (failedScans.length > 5) {
+      errorEmbed.addFields({
+        name: 'Additional Failures',
+        value: `... and ${failedScans.length - 5} more failed scans`,
+        inline: false
+      });
+    }
+
+    embeds.push(errorEmbed);
+  }
+
   const resultsWithProducts = batchResponse.results.filter(r => r.success && r.zeroPriceProducts.length > 0);
   
   resultsWithProducts.slice(0, 3).forEach(result => {

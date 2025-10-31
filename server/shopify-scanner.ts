@@ -27,10 +27,25 @@ function extractStoreName(url: string): string {
 
 export async function scanShopifyStore(url: string): Promise<ScanResult> {
   const scannedAt = new Date().toISOString();
+  let normalizedUrl: string;
+  let storeName: string;
   
   try {
-    const normalizedUrl = normalizeShopifyUrl(url);
-    const storeName = extractStoreName(normalizedUrl);
+    normalizedUrl = normalizeShopifyUrl(url);
+    storeName = extractStoreName(normalizedUrl);
+  } catch (error) {
+    return {
+      storeUrl: url,
+      storeName: 'Invalid Store',
+      success: false,
+      error: error instanceof Error ? error.message : 'Invalid URL format',
+      productsFound: 0,
+      zeroPriceProducts: [],
+      scannedAt,
+    };
+  }
+  
+  try {
     const productsUrl = `${normalizedUrl}/products.json`;
 
     const response = await fetch(productsUrl);
@@ -81,9 +96,6 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
       scannedAt,
     };
   } catch (error) {
-    const normalizedUrl = normalizeShopifyUrl(url);
-    const storeName = extractStoreName(normalizedUrl);
-    
     return {
       storeUrl: normalizedUrl,
       storeName,
@@ -96,10 +108,21 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
   }
 }
 
+async function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function scanMultipleStores(urls: string[]): Promise<BatchScanResponse> {
-  const results = await Promise.all(
-    urls.map(url => scanShopifyStore(url))
-  );
+  const results: ScanResult[] = [];
+  
+  for (let i = 0; i < urls.length; i++) {
+    const result = await scanShopifyStore(urls[i]);
+    results.push(result);
+    
+    if (i < urls.length - 1) {
+      await delay(500);
+    }
+  }
 
   const successfulScans = results.filter(r => r.success).length;
   const failedScans = results.filter(r => !r.success).length;
