@@ -120,6 +120,7 @@ The bot starts automatically when the server runs. It registers slash commands o
 - ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
 - ✅ Added real-time progress bar for batch scans showing current store and percentage complete
 - ✅ Implemented interactive store navigation for batch results with Previous/Next buttons to browse stores
+- ✅ Optimized batch scanning with parallel processing - scans 5 stores simultaneously for 5x faster performance
 
 ## Future Enhancements
 - Historical tracking of price changes
