@@ -25,6 +25,27 @@ function extractStoreName(url: string): string {
   }
 }
 
+async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null> {
+  try {
+    const urlObj = new URL(originalUrl);
+    const hostname = urlObj.hostname;
+    
+    // Try adding 'shop.' subdomain for headless Shopify stores
+    if (!hostname.startsWith('shop.')) {
+      const shopUrl = `${urlObj.protocol}//shop.${hostname}`;
+      const response = await fetch(`${shopUrl}/products.json`);
+      
+      if (response.ok) {
+        return shopUrl;
+      }
+    }
+  } catch {
+    // Ignore errors
+  }
+  
+  return null;
+}
+
 export async function scanShopifyStore(url: string): Promise<ScanResult> {
   const scannedAt = new Date().toISOString();
   let normalizedUrl: string;
@@ -48,7 +69,19 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
   try {
     const productsUrl = `${normalizedUrl}/products.json`;
 
-    const response = await fetch(productsUrl);
+    let response = await fetch(productsUrl);
+    let actualUrl = normalizedUrl;
+    
+    // If 404, try headless Shopify pattern (shop. subdomain)
+    if (!response.ok && response.status === 404) {
+      const headlessUrl = await tryHeadlessShopifyUrl(normalizedUrl);
+      
+      if (headlessUrl) {
+        actualUrl = headlessUrl;
+        storeName = extractStoreName(headlessUrl);
+        response = await fetch(`${headlessUrl}/products.json`);
+      }
+    }
     
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -58,7 +91,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
       }
       
       return {
-        storeUrl: normalizedUrl,
+        storeUrl: actualUrl,
         storeName,
         success: false,
         error: errorMessage,
@@ -76,9 +109,13 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
     for (const product of products) {
       for (const variant of product.variants) {
         const price = parseFloat(variant.price);
-        if (price === 0 || variant.price === '0.00' || variant.price === '0') {
+        // Filter: only include zero-price products that are in stock
+        if ((price === 0 || variant.price === '0.00' || variant.price === '0') && variant.available) {
+          // Create add-to-cart URL instead of product page URL
+          const addToCartUrl = `${actualUrl}/cart/${variant.id}:1`;
+          
           zeroPriceProducts.push({
-            storeUrl: normalizedUrl,
+            storeUrl: actualUrl,
             storeName,
             productId: product.id,
             productTitle: product.title,
@@ -86,7 +123,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
             variantId: variant.id,
             variantTitle: variant.title,
             price: variant.price,
-            productUrl: `${normalizedUrl}/products/${product.handle}`,
+            productUrl: addToCartUrl,
             available: variant.available,
           });
         }
@@ -94,7 +131,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
     }
 
     return {
-      storeUrl: normalizedUrl,
+      storeUrl: actualUrl,
       storeName,
       success: true,
       productsFound: products.length,
