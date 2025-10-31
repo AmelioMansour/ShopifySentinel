@@ -65,12 +65,13 @@ The bot returns a paginated embed showing:
 - Timestamp of scan
 
 **Batch Scan (`/scanbatch`):**
-The bot returns an interactive summary with store navigation:
+The bot returns an interactive summary with dual-level navigation:
 - Overall scan statistics (total stores, success/failed counts, total products found)
-- Navigate through each store with Previous/Next Store buttons
-- Each store shows up to 5 products with details and add-to-cart links
+- **Store Navigation**: Browse between different stores using Previous/Next Store buttons
+- **Product Navigation**: Scroll through products within a store using Previous/Next Products buttons (shown when store has >5 products)
+- Each product shows with a green 🟢 **FREE** indicator
 - Bulk add-to-cart button for each store
-- Footer showing current store position (e.g., "Viewing store 2 of 5 stores with products")
+- Footer showing store position and product range (e.g., "Store 2/5 • Products 6-10 of 18")
 
 ### Headless Shopify Detection
 For stores like hatch.co that use headless Shopify:
@@ -125,4 +126,3 @@ The bot starts automatically when the server runs. It registers slash commands o
 - Scheduled automated scans
 - Filtering by product type/vendor
 - Email notifications for new zero-price items
-- Product-level pagination within batch scan stores (currently shows first 5 products per store)

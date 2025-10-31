@@ -155,16 +155,16 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
   const attachment = interaction.options.getAttachment('file', true);
 
+  // Defer reply first
+  await interaction.deferReply();
+
   // Validate file type
   if (!attachment.contentType?.includes('text') && !attachment.name.endsWith('.txt')) {
-    await interaction.reply({ 
-      content: '❌ Please upload a text file (.txt) with one store URL per line', 
-      ephemeral: true 
+    await interaction.editReply({ 
+      content: '❌ Please upload a text file (.txt) with one store URL per line'
     });
     return;
   }
-
-  await interaction.deferReply();
 
   try {
     // Fetch and parse the file
@@ -579,12 +579,19 @@ function createBatchNavigationEmbed(
     inline: true
   });
   
-  // Show product details with green FREE indicator
+  // Add spacing between store info and products
+  embed.addFields({
+    name: '\u200B',
+    value: '\u200B',
+    inline: false
+  });
+  
+  // Show product details with green FREE indicator (without variants)
   productsToShow.forEach((product, index) => {
     const actualIndex = start + index + 1;
     embed.addFields({
       name: `${actualIndex}. ${product.productTitle}`,
-      value: `${product.variantTitle} • 🟢 **FREE**\n[🛒 Add to Cart](${product.productUrl})`,
+      value: `🟢 **FREE**\n[🛒 Add to Cart](${product.productUrl})`,
       inline: false
     });
   });

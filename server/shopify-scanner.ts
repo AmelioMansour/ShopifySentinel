@@ -211,7 +211,14 @@ export async function scanMultipleStores(
   for (let i = 0; i < urls.length; i++) {
     // Report progress before scanning
     if (onProgress) {
-      const storeName = extractStoreName(urls[i]);
+      // Normalize URL first to extract proper store name
+      let storeName = urls[i];
+      try {
+        const normalized = normalizeShopifyUrl(urls[i]);
+        storeName = extractStoreName(normalized);
+      } catch {
+        storeName = urls[i];
+      }
       await onProgress(i + 1, urls.length, storeName);
     }
     
