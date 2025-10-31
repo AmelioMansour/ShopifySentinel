@@ -204,9 +204,10 @@ async function delay(ms: number): Promise<void> {
 
 export async function scanMultipleStores(
   urls: string[], 
-  onProgress?: (current: number, total: number, storeName: string) => Promise<void>
+  onProgress?: (current: number, total: number, storeName: string) => Promise<void>,
+  batchSize: number = 10
 ): Promise<BatchScanResponse> {
-  const BATCH_SIZE = 10; // Scan 10 stores at a time (2x faster)
+  const BATCH_SIZE = batchSize; // Configurable batch size
   const PROGRESS_UPDATE_INTERVAL = 10; // Update progress every 10 stores
   const results: ScanResult[] = [];
   

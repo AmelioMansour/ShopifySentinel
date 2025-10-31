@@ -163,17 +163,18 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 }
 
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
-  await handleBatchScan(interaction, 25, 'Batch');
+  await handleBatchScan(interaction, 25, 'Batch', 10); // 10 parallel stores
 }
 
 async function handleScanSuperBulkCommand(interaction: ChatInputCommandInteraction) {
-  await handleBatchScan(interaction, 200, 'Super Bulk');
+  await handleBatchScan(interaction, 200, 'Super Bulk', 5); // 5 parallel stores (slower but more reliable)
 }
 
 async function handleBatchScan(
   interaction: ChatInputCommandInteraction, 
   maxUrls: number,
-  scanType: string
+  scanType: string,
+  batchSize: number = 10
 ) {
   const attachment = interaction.options.getAttachment('file', true);
 
@@ -223,7 +224,7 @@ async function handleBatchScan(
       await interaction.editReply({ embeds: [embed] });
     };
 
-    const batchResponse = await scanMultipleStores(urls, onProgress);
+    const batchResponse = await scanMultipleStores(urls, onProgress, batchSize);
     
     // Store batch results for navigation
     const batchDataId = `batch_${interaction.user.id}_${Date.now()}`;
