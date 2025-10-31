@@ -20,10 +20,19 @@ let client: Client | null = null;
 export async function startBot() {
   try {
     console.log('Starting Discord bot...');
+    
+    // Check for token first
+    if (!process.env.DISCORD_BOT_TOKEN) {
+      console.warn('⚠️  DISCORD_BOT_TOKEN not found in environment variables');
+      console.warn('⚠️  Discord bot will not start. Server will continue running.');
+      console.warn('⚠️  To enable the bot, add DISCORD_BOT_TOKEN to your deployment secrets.');
+      return; // Exit gracefully without crashing
+    }
+    
     client = await getUncachableDiscordClient();
 
     client.on('ready', async () => {
-      console.log(`Bot logged in as ${client?.user?.tag}`);
+      console.log(`✅ Bot logged in as ${client?.user?.tag}`);
       await registerCommands();
     });
 
@@ -54,10 +63,11 @@ export async function startBot() {
       }
     });
 
-    console.log('Bot is running and listening for commands');
+    console.log('✅ Bot is running and listening for commands');
   } catch (error) {
-    console.error('Failed to start bot:', error);
-    throw error;
+    console.error('❌ Failed to start Discord bot:', error);
+    console.error('❌ Server will continue running without bot functionality');
+    // Don't throw - let the server continue running
   }
 }
 
