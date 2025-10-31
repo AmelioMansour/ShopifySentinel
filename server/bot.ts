@@ -73,10 +73,10 @@ async function registerCommands() {
       ),
     new SlashCommandBuilder()
       .setName('scanbatch')
-      .setDescription('Scan multiple Shopify stores for $0.00 products')
-      .addStringOption(option =>
-        option.setName('urls')
-          .setDescription('Comma-separated store URLs')
+      .setDescription('Scan multiple Shopify stores for $0.00 products (max 25 URLs)')
+      .addAttachmentOption(option =>
+        option.setName('file')
+          .setDescription('Text file with store URLs (one per line, max 25)')
           .setRequired(true)
       ),
   ].map(command => command.toJSON());
@@ -138,20 +138,52 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 }
 
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
-  const urlsInput = interaction.options.getString('urls', true);
-  const urls = urlsInput.split(',').map(url => url.trim()).filter(url => url.length > 0);
+  const attachment = interaction.options.getAttachment('file', true);
 
-  if (urls.length === 0) {
-    await interaction.reply({ content: '❌ Please provide at least one URL', ephemeral: true });
+  // Validate file type
+  if (!attachment.contentType?.includes('text') && !attachment.name.endsWith('.txt')) {
+    await interaction.reply({ 
+      content: '❌ Please upload a text file (.txt) with one store URL per line', 
+      ephemeral: true 
+    });
     return;
   }
 
   await interaction.deferReply();
 
-  const batchResponse = await scanMultipleStores(urls);
-  
-  const embeds = createBatchResultEmbeds(batchResponse);
-  await interaction.editReply({ embeds });
+  try {
+    // Fetch and parse the file
+    const response = await fetch(attachment.url);
+    const fileContent = await response.text();
+    
+    // Parse URLs from file (one per line)
+    const urls = fileContent
+      .split(/\r?\n/)
+      .map(url => url.trim())
+      .filter(url => url.length > 0);
+
+    if (urls.length === 0) {
+      await interaction.editReply({ content: '❌ No URLs found in file. Please provide at least one URL per line.' });
+      return;
+    }
+
+    if (urls.length > 25) {
+      await interaction.editReply({ 
+        content: `❌ Too many URLs! Found ${urls.length} URLs but maximum is 25. Please reduce the number of stores in your file.` 
+      });
+      return;
+    }
+
+    const batchResponse = await scanMultipleStores(urls);
+    
+    const embeds = createBatchResultEmbeds(batchResponse);
+    await interaction.editReply({ embeds });
+  } catch (error) {
+    console.error('Error processing file:', error);
+    await interaction.editReply({ 
+      content: '❌ Failed to read the file. Please make sure it\'s a valid text file with one URL per line.' 
+    });
+  }
 }
 
 const ITEMS_PER_PAGE = 5;

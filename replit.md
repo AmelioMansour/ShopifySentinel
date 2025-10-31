@@ -5,7 +5,7 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 
 ## Features
 - `/scan` - Scan a single Shopify store for zero-price products with pagination
-- `/scanbatch` - Scan multiple Shopify stores at once (comma-separated URLs)
+- `/scanbatch` - Scan multiple Shopify stores at once (text file upload, max 25 URLs)
 - **Headless Shopify Auto-Detection** - Automatically tries `shop.` subdomain for headless stores
 - **Add-to-Cart Links** - Direct links to add products to cart instead of product pages
 - **Pagination** - Navigate through results with Previous/Next buttons (5 products per page)
@@ -41,7 +41,14 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 ### Commands
 ```
 /scan url:https://store-name.myshopify.com
-/scanbatch urls:store1.myshopify.com, store2.myshopify.com, store3.myshopify.com
+/scanbatch file:[upload .txt file with one URL per line, max 25 URLs]
+```
+
+**Example batch file format (stores.txt):**
+```
+store1.myshopify.com
+store2.myshopify.com
+shop.hatch.co
 ```
 
 ### Example Scan Result
@@ -64,8 +71,9 @@ For stores like hatch.co that use headless Shopify:
 ## Technical Details
 
 ### Shopify API
-- Endpoint: `https://[store-domain]/products.json`
+- Endpoint: `https://[store-domain]/products.json?limit=250&page=[N]`
 - No authentication required (public endpoint)
+- Pagination: Fetches up to 250 products per page, continues until all products scanned
 - Returns all products with variants and pricing
 - Filters variants where `price === "0.00"` AND `available === true`
 - Add-to-cart URL format: `https://[store-domain]/cart/[variantId]:1`
@@ -83,6 +91,8 @@ For stores like hatch.co that use headless Shopify:
 - Non-Shopify websites
 - Deactivated/temporarily unavailable Shopify stores
 - Headless Shopify auto-detection fallback
+- Invalid file uploads (non-text files)
+- File URL limit validation (max 25 URLs)
 - Rate limiting (future enhancement)
 
 ## Development
@@ -94,6 +104,8 @@ The bot starts automatically when the server runs. It registers slash commands o
 - ✅ Added pagination with Previous/Next buttons
 - ✅ Implemented out-of-stock filtering
 - ✅ Added bulk add-to-cart functionality with URL splitting
+- ✅ Fixed product scanning pagination - now scans entire store catalogs (250 products per page)
+- ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
 
 ## Future Enhancements
 - Historical tracking of price changes
