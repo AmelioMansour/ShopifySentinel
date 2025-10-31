@@ -96,6 +96,8 @@ For stores like hatch.co that use headless Shopify:
 - Bot automatically splits bulk cart URLs into multiple links
 - Each link contains as many products as possible
 - User gets numbered links (Link 1, Link 2, etc.)
+- Response messages are also split to avoid Discord's 2000 character message limit
+- Multiple follow-up messages are sent when needed to deliver all links
 
 ### Error Handling
 - Invalid URLs

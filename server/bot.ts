@@ -398,19 +398,47 @@ async function handleButtonInteraction(interaction: any) {
       
       const urls = createBulkAddToCartUrls(store.zeroPriceProducts, store.storeUrl);
       
+      // Build initial response
       let response = `🛒 **Bulk Add-to-Cart Links for ${store.storeName}**\n\n`;
       response += `Found ${store.zeroPriceProducts.length} products. `;
       
       if (urls.length === 1) {
         response += `All products fit in one URL:\n\n${urls[0]}`;
+        await interaction.editReply({ content: response });
       } else {
         response += `Split into ${urls.length} URLs due to length:\n\n`;
-        urls.forEach((url, index) => {
-          response += `**Link ${index + 1}:**\n${url}\n\n`;
-        });
+        
+        // Send links in chunks to avoid Discord's 2000 character limit
+        const MAX_MESSAGE_LENGTH = 1900;
+        let currentMessage = response;
+        let sentFirst = false;
+        
+        for (let i = 0; i < urls.length; i++) {
+          const linkText = `**Link ${i + 1}:**\n${urls[i]}\n\n`;
+          
+          // Check if adding this link would exceed the limit
+          if (currentMessage.length + linkText.length > MAX_MESSAGE_LENGTH) {
+            // Send current message
+            if (!sentFirst) {
+              await interaction.editReply({ content: currentMessage });
+              sentFirst = true;
+            } else {
+              await interaction.followUp({ content: currentMessage, ephemeral: true });
+            }
+            // Start new message with just this link
+            currentMessage = linkText;
+          } else {
+            currentMessage += linkText;
+          }
+        }
+        
+        // Send remaining message
+        if (!sentFirst) {
+          await interaction.editReply({ content: currentMessage });
+        } else if (currentMessage.trim().length > 0) {
+          await interaction.followUp({ content: currentMessage, ephemeral: true });
+        }
       }
-      
-      await interaction.editReply({ content: response });
       return;
     }
   }
@@ -431,19 +459,47 @@ async function handleButtonInteraction(interaction: any) {
     
     const urls = createBulkAddToCartUrls(data.products, data.storeUrl);
     
+    // Build initial response
     let response = `🛒 **Bulk Add-to-Cart Links for ${data.storeName}**\n\n`;
     response += `Found ${data.products.length} products. `;
     
     if (urls.length === 1) {
       response += `All products fit in one URL:\n\n${urls[0]}`;
+      await interaction.editReply({ content: response });
     } else {
       response += `Split into ${urls.length} URLs due to length:\n\n`;
-      urls.forEach((url, index) => {
-        response += `**Link ${index + 1}:**\n${url}\n\n`;
-      });
+      
+      // Send links in chunks to avoid Discord's 2000 character limit
+      const MAX_MESSAGE_LENGTH = 1900;
+      let currentMessage = response;
+      let sentFirst = false;
+      
+      for (let i = 0; i < urls.length; i++) {
+        const linkText = `**Link ${i + 1}:**\n${urls[i]}\n\n`;
+        
+        // Check if adding this link would exceed the limit
+        if (currentMessage.length + linkText.length > MAX_MESSAGE_LENGTH) {
+          // Send current message
+          if (!sentFirst) {
+            await interaction.editReply({ content: currentMessage });
+            sentFirst = true;
+          } else {
+            await interaction.followUp({ content: currentMessage, ephemeral: true });
+          }
+          // Start new message with just this link
+          currentMessage = linkText;
+        } else {
+          currentMessage += linkText;
+        }
+      }
+      
+      // Send remaining message
+      if (!sentFirst) {
+        await interaction.editReply({ content: currentMessage });
+      } else if (currentMessage.trim().length > 0) {
+        await interaction.followUp({ content: currentMessage, ephemeral: true });
+      }
     }
-    
-    await interaction.editReply({ content: response });
     return;
   }
   
