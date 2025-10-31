@@ -206,15 +206,20 @@ export async function scanMultipleStores(
   urls: string[], 
   onProgress?: (current: number, total: number, storeName: string) => Promise<void>
 ): Promise<BatchScanResponse> {
-  const BATCH_SIZE = 5; // Scan 5 stores at a time
+  const BATCH_SIZE = 10; // Scan 10 stores at a time (2x faster)
+  const PROGRESS_UPDATE_INTERVAL = 10; // Update progress every 10 stores
   const results: ScanResult[] = [];
   
   // Process stores in batches
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
     const batch = urls.slice(i, Math.min(i + BATCH_SIZE, urls.length));
     
-    // Report progress for this batch
-    if (onProgress && batch.length > 0) {
+    // Report progress every PROGRESS_UPDATE_INTERVAL stores or on first/last batch
+    const shouldUpdateProgress = i === 0 || 
+                                 i % PROGRESS_UPDATE_INTERVAL === 0 || 
+                                 i + BATCH_SIZE >= urls.length;
+    
+    if (onProgress && shouldUpdateProgress && batch.length > 0) {
       let storeName = batch[0];
       try {
         const normalized = normalizeShopifyUrl(batch[0]);

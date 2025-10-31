@@ -129,7 +129,8 @@ The bot starts automatically when the server runs. It registers slash commands o
 - ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
 - ✅ Added real-time progress bar for batch scans showing current store and percentage complete
 - ✅ Implemented interactive store navigation for batch results with Previous/Next buttons to browse stores
-- ✅ Optimized batch scanning with parallel processing - scans 5 stores simultaneously for 5x faster performance
+- ✅ Optimized batch scanning with parallel processing - scans 10 stores simultaneously for 10x faster performance
+- ✅ Reduced progress update frequency to minimize Discord API calls and improve reliability
 - ✅ Fixed bulk cart link response message splitting to handle Discord's 2000 character limit
 - ✅ Added `/scansuperbulk` command for scanning up to 200 stores at once
 
