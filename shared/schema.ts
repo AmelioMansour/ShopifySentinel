@@ -33,11 +33,6 @@ export const zeroPriceProductSchema = z.object({
   available: z.boolean().optional(),
 });
 
-// Scan Request Schema
-export const scanRequestSchema = z.object({
-  urls: z.array(z.string().url()).min(1, "At least one URL is required"),
-});
-
 // Scan Result Schema
 export const scanResultSchema = z.object({
   storeUrl: z.string(),
@@ -61,6 +56,5 @@ export const batchScanResponseSchema = z.object({
 export type ShopifyVariant = z.infer<typeof shopifyVariantSchema>;
 export type ShopifyProduct = z.infer<typeof shopifyProductSchema>;
 export type ZeroPriceProduct = z.infer<typeof zeroPriceProductSchema>;
-export type ScanRequest = z.infer<typeof scanRequestSchema>;
 export type ScanResult = z.infer<typeof scanResultSchema>;
 export type BatchScanResponse = z.infer<typeof batchScanResponseSchema>;

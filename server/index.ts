@@ -78,4 +78,10 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
   });
+
+  // Start Discord bot
+  const { startBot } = await import("./bot");
+  startBot().catch(err => {
+    console.error('Failed to start Discord bot:', err);
+  });
 })();
