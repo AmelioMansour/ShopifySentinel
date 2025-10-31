@@ -33,10 +33,18 @@ async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null
     // Try adding 'shop.' subdomain for headless Shopify stores
     if (!hostname.startsWith('shop.')) {
       const shopUrl = `${urlObj.protocol}//shop.${hostname}`;
-      const response = await fetch(`${shopUrl}/products.json`);
       
-      if (response.ok) {
-        return shopUrl;
+      try {
+        const response = await fetch(`${shopUrl}/products.json`, { 
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+        
+        if (response.ok) {
+          return shopUrl;
+        }
+      } catch (error) {
+        // Connection error or timeout - skip this subdomain
+        console.log(`Failed to check shop.${hostname}:`, error instanceof Error ? error.message : 'Unknown error');
       }
     }
   } catch {
@@ -93,11 +101,13 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
           if (errorData.errors && errorData.errors === "Not Found") {
             errorMessage = `This Shopify store appears to be deactivated or temporarily unavailable. The store exists but is not currently accessible.`;
           } else {
-            errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404. Please make sure you're scanning a valid Shopify store URL (e.g., store-name.myshopify.com).`;
+            errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404.\n\nTry scanning:\n• The .myshopify.com URL (e.g., storename.myshopify.com)\n• A subdomain like shop.domain.com or store.domain.com`;
           }
         } catch {
           // Not JSON response, likely not a Shopify store
-          errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404. Please make sure you're scanning a valid Shopify store URL (e.g., store-name.myshopify.com).`;
+          const hostname = new URL(actualUrl).hostname;
+          const baseDomain = hostname.replace(/^(www\.|shop\.|store\.)/, '');
+          errorMessage = `This does not appear to be a Shopify store. The /products.json endpoint returned 404.\n\nTry scanning:\n• ${baseDomain.split('.')[0]}.myshopify.com\n• shop.${baseDomain} or store.${baseDomain}`;
         }
       }
       
