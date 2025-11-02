@@ -1,6 +1,6 @@
 import { type ScanResultRecord, type InsertScanResult, scanResults } from "@shared/schema";
 import { db } from "./db";
-import { desc } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   saveScanResult(result: InsertScanResult): Promise<ScanResultRecord>;
@@ -9,7 +9,20 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async saveScanResult(result: InsertScanResult): Promise<ScanResultRecord> {
-    const [saved] = await db.insert(scanResults).values(result).returning();
+    // Upsert: Insert new record or update existing one if storeUrl already exists
+    const [saved] = await db.insert(scanResults)
+      .values(result)
+      .onConflictDoUpdate({
+        target: scanResults.storeUrl,
+        set: {
+          storeName: result.storeName,
+          freeProductCount: result.freeProductCount,
+          totalProductsScanned: result.totalProductsScanned,
+          discordUsername: result.discordUsername,
+          scannedAt: sql`NOW()`,
+        },
+      })
+      .returning();
     return saved;
   }
 

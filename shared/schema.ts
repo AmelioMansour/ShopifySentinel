@@ -5,7 +5,7 @@ import { createInsertSchema } from "drizzle-zod";
 // Database Tables
 export const scanResults = pgTable("scan_results", {
   id: serial("id").primaryKey(),
-  storeUrl: varchar("store_url", { length: 500 }).notNull(),
+  storeUrl: varchar("store_url", { length: 500 }).notNull().unique(),
   storeName: varchar("store_name", { length: 255 }).notNull(),
   freeProductCount: integer("free_product_count").notNull().default(0),
   totalProductsScanned: integer("total_products_scanned").notNull().default(0),
