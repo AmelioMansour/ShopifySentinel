@@ -63,20 +63,27 @@ shop.hatch.co
 - Commands can only be used in Discord servers (not DMs)
 - Permission check is performed before any scan operation begins
 
+**Results Delivery:**
+- All scan results are sent via **Direct Message (DM)** to the user
+- An ephemeral confirmation appears in the channel when you run a command
+- Batch scans show real-time progress updates in your DMs
+- If you have DMs disabled, you'll receive an error message asking you to enable them
+
 ### Example Scan Result
 
 **Single Store Scan (`/scan`):**
-The bot returns a paginated embed showing:
+The bot sends a paginated embed to your DMs showing:
 - Store name
 - Number of in-stock zero-price products found
 - Total products scanned
-- Product details (title, variant, add-to-cart link)
+- Product details (title, add-to-cart link)
 - Page navigation buttons (Previous/Next)
 - Bulk add-to-cart button for all products
 - Timestamp of scan
 
 **Batch Scan (`/scanbatch`):**
-The bot returns an interactive summary with dual-level navigation:
+The bot sends progress updates and results to your DMs with interactive dual-level navigation:
+- Real-time progress bar showing current store being scanned
 - Overall scan statistics (total stores, success/failed counts, total products found)
 - **Store Navigation**: Browse between different stores using Previous/Next Store buttons
 - **Product Navigation**: Scroll through products within a store using Previous/Next Products buttons (shown when store has >5 products)
@@ -162,6 +169,7 @@ The application is designed to handle missing configuration gracefully:
 - Review deployment logs for specific error messages
 
 ## Recent Updates (November 2, 2025)
+- ✅ **Changed to DM delivery** - all scan results now sent via Direct Message instead of in-channel
 - ✅ Added role-based permissions - users must have specific role (ID: 1434562069893746698) to use commands
 - ✅ Implemented admin channel logging - all scan results sent to channel (ID: 1434557891318124798)
 - ✅ Removed `/scansuperbulk` command - simplified to just `/scan` and `/scanbatch`

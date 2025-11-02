@@ -201,17 +201,14 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 
   const result = await scanShopifyStore(url);
   
+  let embedToLog;
+  
   // Try to send results via DM
   try {
     if (!result.success || result.zeroPriceProducts.length === 0) {
       const embed = createScanResultEmbed(result);
+      embedToLog = embed;
       await interaction.user.send({ embeds: [embed] });
-      
-      // Send results to admin channel
-      await sendToAdminChannel({ 
-        embeds: [embed],
-        content: `Scan initiated by <@${interaction.user.id}>`
-      });
       return;
     }
 
@@ -233,13 +230,8 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
       dataId
     );
     
+    embedToLog = embed;
     await interaction.user.send({ embeds: [embed], components });
-    
-    // Send results to admin channel
-    await sendToAdminChannel({ 
-      embeds: [embed],
-      content: `Scan initiated by <@${interaction.user.id}>`
-    });
   } catch (error) {
     console.error('Error sending DM:', error);
     // Follow up if DM fails
@@ -247,6 +239,14 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
       content: '❌ Could not send you a DM. Please check your privacy settings to allow DMs from server members.', 
       ephemeral: true 
     });
+  } finally {
+    // Always send results to admin channel, even if DM failed
+    if (embedToLog) {
+      await sendToAdminChannel({ 
+        embeds: [embedToLog],
+        content: `Scan initiated by <@${interaction.user.id}>`
+      });
+    }
   }
 }
 
@@ -340,6 +340,8 @@ async function handleBatchScan(
     batchResultsData.set(batchDataId, batchResponse);
     batchNavState.set(batchDataId, { storeIndex: 0, productPage: 0 });
     
+    let embedToLog;
+    
     // Try to send results via DM
     try {
       // Delete progress message if it exists
@@ -349,19 +351,22 @@ async function handleBatchScan(
 
       // Show summary and first store with results in DM
       const { embed, components } = createBatchNavigationEmbed(batchResponse, 0, 0, batchDataId);
+      embedToLog = embed;
       await interaction.user.send({ embeds: [embed], components });
-      
-      // Send results to admin channel
-      await sendToAdminChannel({ 
-        embeds: [embed],
-        content: `Batch scan initiated by <@${interaction.user.id}> - ${urls.length} stores scanned`
-      });
     } catch (error) {
       console.error('Error sending DM:', error);
       await interaction.followUp({ 
         content: '❌ Could not send you a DM. Please check your privacy settings to allow DMs from server members.', 
         ephemeral: true 
       });
+    } finally {
+      // Always send results to admin channel, even if DM failed
+      if (embedToLog) {
+        await sendToAdminChannel({ 
+          embeds: [embedToLog],
+          content: `Batch scan initiated by <@${interaction.user.id}> - ${urls.length} stores scanned`
+        });
+      }
     }
   } catch (error) {
     console.error('Error processing file:', error);
@@ -490,6 +495,9 @@ function createPaginatedEmbed(
 async function handleButtonInteraction(interaction: any) {
   if (!interaction.isButton()) return;
   
+  // Check if we're in a DM (no guild context)
+  const isInDM = !interaction.guild;
+  
   const parts = interaction.customId.split('|');
   const action = parts[0];
   const dataId = parts[1];
@@ -499,7 +507,7 @@ async function handleButtonInteraction(interaction: any) {
     if (!batchResultsData.has(dataId) || !batchNavState.has(dataId)) {
       await interaction.reply({ 
         content: '❌ This interaction has expired. Please run the scan command again.', 
-        ephemeral: true 
+        ephemeral: !isInDM 
       });
       return;
     }
@@ -545,7 +553,7 @@ async function handleButtonInteraction(interaction: any) {
     }
     
     if (action === 'batchbulk') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: !isInDM });
       
       const store = storesWithProducts[navState.storeIndex];
       
@@ -576,7 +584,7 @@ async function handleButtonInteraction(interaction: any) {
               await interaction.editReply({ content: currentMessage });
               sentFirst = true;
             } else {
-              await interaction.followUp({ content: currentMessage, ephemeral: true });
+              await interaction.followUp({ content: currentMessage, ephemeral: !isInDM });
             }
             // Start new message with just this link
             currentMessage = linkText;
@@ -589,7 +597,7 @@ async function handleButtonInteraction(interaction: any) {
         if (!sentFirst) {
           await interaction.editReply({ content: currentMessage });
         } else if (currentMessage.trim().length > 0) {
-          await interaction.followUp({ content: currentMessage, ephemeral: true });
+          await interaction.followUp({ content: currentMessage, ephemeral: !isInDM });
         }
       }
       return;
@@ -600,7 +608,7 @@ async function handleButtonInteraction(interaction: any) {
   if (!paginationData.has(dataId)) {
     await interaction.reply({ 
       content: '❌ This interaction has expired. Please run the scan command again.', 
-      ephemeral: true 
+      ephemeral: !isInDM 
     });
     return;
   }
@@ -608,7 +616,7 @@ async function handleButtonInteraction(interaction: any) {
   const data = paginationData.get(dataId)!;
   
   if (action === 'bulk') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ ephemeral: !isInDM });
     
     const urls = createBulkAddToCartUrls(data.products, data.storeUrl);
     
@@ -637,7 +645,7 @@ async function handleButtonInteraction(interaction: any) {
             await interaction.editReply({ content: currentMessage });
             sentFirst = true;
           } else {
-            await interaction.followUp({ content: currentMessage, ephemeral: true });
+            await interaction.followUp({ content: currentMessage, ephemeral: !isInDM });
           }
           // Start new message with just this link
           currentMessage = linkText;
@@ -650,7 +658,7 @@ async function handleButtonInteraction(interaction: any) {
       if (!sentFirst) {
         await interaction.editReply({ content: currentMessage });
       } else if (currentMessage.trim().length > 0) {
-        await interaction.followUp({ content: currentMessage, ephemeral: true });
+        await interaction.followUp({ content: currentMessage, ephemeral: !isInDM });
       }
     }
     return;
