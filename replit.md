@@ -29,14 +29,15 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 - **index.ts** - Express server and bot startup
 
 ### Database (`shared/schema.ts`)
-- **scan_results** table - Stores all scan history
+- **scan_results** table - Stores scan history (only scans with free products)
   - `id` - Auto-incrementing primary key
   - `storeUrl` - The Shopify store URL scanned
   - `storeName` - Store name extracted from scan
   - `freeProductCount` - Number of free products found (in stock)
   - `totalProductsScanned` - Total products scanned in the store
-  - `discordUserId` - Discord user ID who initiated the scan
+  - `discordUsername` - Discord username who initiated the scan
   - `scannedAt` - Timestamp of when the scan was performed
+  - **Note**: Only scans with at least 1 free product are saved to the database
 
 ### Data Flow
 1. User invokes slash command in Discord
@@ -44,8 +45,8 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 3. Scanner fetches /products.json from Shopify store
 4. Parser filters for variants with price = "0.00"
 5. Results formatted as Discord embeds and sent to user's DM
-6. Scan results saved to PostgreSQL database
-7. Summarized table view sent to admin channel
+6. If free products found: Scan results saved to PostgreSQL database
+7. If free products found: Summarized table view sent to admin channel
 
 ### Discord Integration
 - Uses Replit Discord connector for authentication
