@@ -188,7 +188,7 @@ async function sendToAdminChannel(content: { embeds?: EmbedBuilder[], content?: 
 
 // Create a summarized table view for admin channel
 function createAdminSummaryMessage(
-  userId: string, 
+  username: string, 
   results: Array<{ storeUrl: string; storeName: string; freeProductCount: number; totalProducts: number }>
 ): string {
   // Calculate totals
@@ -196,7 +196,7 @@ function createAdminSummaryMessage(
   const totalScanned = results.reduce((sum, r) => sum + r.totalProducts, 0);
   
   // Build table header
-  let message = `📊 **Scan Summary** - Initiated by <@${userId}>\n\n`;
+  let message = `📊 **Scan Summary** - Initiated by @${username}\n\n`;
   message += '```\n';
   message += 'Store                                      Free  Total\n';
   message += '─'.repeat(60) + '\n';
@@ -269,8 +269,8 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
       ephemeral: true 
     });
   } finally {
-    // Save to database and send summary to admin channel
-    if (result.success) {
+    // Save to database and send summary to admin channel (only if free products found)
+    if (result.success && result.zeroPriceProducts.length > 0) {
       try {
         // Save to database
         await storage.saveScanResult({
@@ -278,11 +278,11 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
           storeName: result.storeName,
           freeProductCount: result.zeroPriceProducts.length,
           totalProductsScanned: result.productsFound,
-          discordUserId: interaction.user.id,
+          discordUsername: interaction.user.username,
         });
 
         // Send summarized table view to admin channel
-        const summaryMessage = createAdminSummaryMessage(interaction.user.id, [{
+        const summaryMessage = createAdminSummaryMessage(interaction.user.username, [{
           storeUrl: result.storeUrl,
           storeName: result.storeName,
           freeProductCount: result.zeroPriceProducts.length,
@@ -407,19 +407,19 @@ async function handleBatchScan(
         ephemeral: true 
       });
     } finally {
-      // Save all successful scans to database and send summary to admin channel
+      // Save all successful scans to database and send summary to admin channel (only stores with free items)
       try {
         const summaryData = [];
         
         for (const result of batchResponse.results) {
-          if (result.success) {
+          if (result.success && result.zeroPriceProducts.length > 0) {
             // Save to database
             await storage.saveScanResult({
               storeUrl: result.storeUrl,
               storeName: result.storeName,
               freeProductCount: result.zeroPriceProducts.length,
               totalProductsScanned: result.productsFound,
-              discordUserId: interaction.user.id,
+              discordUsername: interaction.user.username,
             });
 
             // Add to summary
@@ -434,7 +434,7 @@ async function handleBatchScan(
 
         // Send summarized table view to admin channel
         if (summaryData.length > 0) {
-          const summaryMessage = createAdminSummaryMessage(interaction.user.id, summaryData);
+          const summaryMessage = createAdminSummaryMessage(interaction.user.username, summaryData);
           await sendToAdminChannel({ content: summaryMessage });
         }
       } catch (error) {

@@ -9,7 +9,7 @@ export const scanResults = pgTable("scan_results", {
   storeName: varchar("store_name", { length: 255 }).notNull(),
   freeProductCount: integer("free_product_count").notNull().default(0),
   totalProductsScanned: integer("total_products_scanned").notNull().default(0),
-  discordUserId: varchar("discord_user_id", { length: 100 }).notNull(),
+  discordUsername: varchar("discord_username", { length: 100 }).notNull(),
   scannedAt: timestamp("scanned_at").notNull().defaultNow(),
 });
 
