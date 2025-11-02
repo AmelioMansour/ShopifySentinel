@@ -24,15 +24,28 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 - **bot.ts** - Discord bot initialization, command registration, and interaction handlers
 - **discord-client.ts** - Discord authentication using Replit connector
 - **shopify-scanner.ts** - Core scanning logic to fetch and parse /products.json
+- **storage.ts** - Database interface for saving and retrieving scan results
+- **db.ts** - PostgreSQL database connection using Drizzle ORM
 - **index.ts** - Express server and bot startup
+
+### Database (`shared/schema.ts`)
+- **scan_results** table - Stores all scan history
+  - `id` - Auto-incrementing primary key
+  - `storeUrl` - The Shopify store URL scanned
+  - `storeName` - Store name extracted from scan
+  - `freeProductCount` - Number of free products found (in stock)
+  - `totalProductsScanned` - Total products scanned in the store
+  - `discordUserId` - Discord user ID who initiated the scan
+  - `scannedAt` - Timestamp of when the scan was performed
 
 ### Data Flow
 1. User invokes slash command in Discord
 2. Bot handler receives interaction
 3. Scanner fetches /products.json from Shopify store
 4. Parser filters for variants with price = "0.00"
-5. Results formatted as Discord embeds
-6. Response sent to user
+5. Results formatted as Discord embeds and sent to user's DM
+6. Scan results saved to PostgreSQL database
+7. Summarized table view sent to admin channel
 
 ### Discord Integration
 - Uses Replit Discord connector for authentication
@@ -90,7 +103,24 @@ The bot sends progress updates and results to your DMs with interactive dual-lev
 - Each product shows with a green 🟢 **FREE** indicator
 - Bulk add-to-cart button for each store
 - Footer showing store position and product range (e.g., "Store 2/5 • Products 6-10 of 18")
-- Results are automatically sent to the admin channel (ID: 1434557891318124798) with user attribution
+
+**Admin Channel Summary:**
+All scan results are automatically sent to the admin channel (ID: 1434557891318124798) in a summarized table format:
+```
+📊 Scan Summary - Initiated by @username
+
+Store                                      Free  Total
+────────────────────────────────────────────────────────
+example-store.myshopify.com                  12    450
+another-shop.com                              5    230
+────────────────────────────────────────────────────────
+TOTAL                                        17    680
+
+✅ 2 store(s) scanned | 17 free products found
+```
+- Shows store names, free product counts, and total products scanned
+- Includes user attribution
+- All scans are saved to the database for historical tracking
 
 ### Headless Shopify Detection
 For stores like hatch.co that use headless Shopify:
@@ -169,6 +199,8 @@ The application is designed to handle missing configuration gracefully:
 - Review deployment logs for specific error messages
 
 ## Recent Updates (November 2, 2025)
+- ✅ **Database Integration** - All scan results now saved to PostgreSQL database for historical tracking
+- ✅ **Admin Summary View** - Admin channel receives summarized table view showing all stores scanned
 - ✅ **Changed to DM delivery** - all scan results now sent via Direct Message instead of in-channel
 - ✅ Added role-based permissions - users must have specific role (ID: 1434562069893746698) to use commands
 - ✅ Implemented admin channel logging - all scan results sent to channel (ID: 1434557891318124798)
