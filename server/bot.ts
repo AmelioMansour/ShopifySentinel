@@ -9,13 +9,19 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ComponentType
+  ComponentType,
+  TextChannel
 } from 'discord.js';
 import { getUncachableDiscordClient } from './discord-client';
 import { scanShopifyStore, scanMultipleStores } from './shopify-scanner';
 import type { ScanResult, BatchScanResponse, ZeroPriceProduct } from '@shared/schema';
 
 let client: Client | null = null;
+
+// Required role ID for bot commands
+const REQUIRED_ROLE_ID = '1434562069893746698';
+// Admin channel ID for scan results
+const ADMIN_CHANNEL_ID = '1434557891318124798';
 
 export async function startBot() {
   try {
@@ -43,8 +49,6 @@ export async function startBot() {
             await handleScanCommand(interaction);
           } else if (interaction.commandName === 'scanbatch') {
             await handleScanBatchCommand(interaction);
-          } else if (interaction.commandName === 'scansuperbulk') {
-            await handleScanSuperBulkCommand(interaction);
           }
         } else if (interaction.isButton()) {
           await handleButtonInteraction(interaction);
@@ -91,14 +95,6 @@ async function registerCommands() {
           .setDescription('Text file with store URLs (one per line, max 25)')
           .setRequired(true)
       ),
-    new SlashCommandBuilder()
-      .setName('scansuperbulk')
-      .setDescription('Scan up to 200 Shopify stores for $0.00 products')
-      .addAttachmentOption(option =>
-        option.setName('file')
-          .setDescription('Text file with store URLs (one per line, max 200)')
-          .setRequired(true)
-      ),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(client.token!);
@@ -138,7 +134,54 @@ const batchNavState = new Map<string, {
   productPage: number
 }>();
 
+// Check if user has required role
+async function checkUserPermission(interaction: ChatInputCommandInteraction): Promise<boolean> {
+  if (!interaction.guild || !interaction.member) {
+    await interaction.reply({ 
+      content: '❌ This command can only be used in a server.', 
+      ephemeral: true 
+    });
+    return false;
+  }
+
+  const member = interaction.member;
+  const hasRole = 'roles' in member && member.roles instanceof Map 
+    ? member.roles.has(REQUIRED_ROLE_ID)
+    : 'roles' in member && Array.isArray(member.roles)
+    ? member.roles.includes(REQUIRED_ROLE_ID)
+    : false;
+
+  if (!hasRole) {
+    await interaction.reply({ 
+      content: '❌ You do not have permission to use this command. Required role is missing.', 
+      ephemeral: true 
+    });
+    return false;
+  }
+
+  return true;
+}
+
+// Send scan results to admin channel
+async function sendToAdminChannel(content: { embeds?: EmbedBuilder[], content?: string, components?: any[] }) {
+  if (!client) return;
+  
+  try {
+    const channel = await client.channels.fetch(ADMIN_CHANNEL_ID);
+    if (channel && channel.isTextBased()) {
+      await (channel as TextChannel).send(content);
+    }
+  } catch (error) {
+    console.error('Error sending to admin channel:', error);
+  }
+}
+
 async function handleScanCommand(interaction: ChatInputCommandInteraction) {
+  // Check permissions first
+  if (!await checkUserPermission(interaction)) {
+    return;
+  }
+
   const url = interaction.options.getString('url', true);
   
   await interaction.deferReply();
@@ -170,14 +213,21 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
   );
   
   await interaction.editReply({ embeds: [embed], components });
+  
+  // Send results to admin channel
+  await sendToAdminChannel({ 
+    embeds: [embed],
+    content: `Scan initiated by <@${interaction.user.id}>`
+  });
 }
 
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
+  // Check permissions first
+  if (!await checkUserPermission(interaction)) {
+    return;
+  }
+  
   await handleBatchScan(interaction, 25, 'Batch', 10); // 10 parallel stores
-}
-
-async function handleScanSuperBulkCommand(interaction: ChatInputCommandInteraction) {
-  await handleBatchScan(interaction, 200, 'Super Bulk', 5); // 5 parallel stores (slower but more reliable)
 }
 
 async function handleBatchScan(
@@ -244,6 +294,12 @@ async function handleBatchScan(
     // Show summary and first store with results
     const { embed, components } = createBatchNavigationEmbed(batchResponse, 0, 0, batchDataId);
     await interaction.editReply({ embeds: [embed], components });
+    
+    // Send results to admin channel
+    await sendToAdminChannel({ 
+      embeds: [embed],
+      content: `Batch scan initiated by <@${interaction.user.id}> - ${urls.length} stores scanned`
+    });
   } catch (error) {
     console.error('Error processing file:', error);
     await interaction.editReply({ 
