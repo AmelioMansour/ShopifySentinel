@@ -1,22 +1,59 @@
 import type { ScanResult, BatchScanResponse, ShopifyProduct } from '@shared/schema';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Proxy configuration and state
 let proxyEnabled = false;
-let proxyAgent: HttpsProxyAgent<string> | null = null;
+let proxyList: string[] = [];
+let currentProxyIndex = 0;
 
-// Initialize proxy agent if credentials are available
-function initializeProxyAgent(): HttpsProxyAgent<string> | null {
-  const host = process.env.PROXY_HOST;
-  const port = process.env.PROXY_PORT;
-  const username = process.env.PROXY_USERNAME;
-  const password = process.env.PROXY_PASSWORD;
+// Load proxy list from file on startup
+function loadProxyList(): void {
+  try {
+    const proxyFilePath = path.join(__dirname, 'proxies.txt');
+    if (fs.existsSync(proxyFilePath)) {
+      const fileContent = fs.readFileSync(proxyFilePath, 'utf-8');
+      proxyList = fileContent
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+      console.log(`✅ Loaded ${proxyList.length} PyProxy proxies from file`);
+    } else {
+      console.warn('⚠️  No proxy file found at server/proxies.txt');
+    }
+  } catch (error) {
+    console.error('❌ Failed to load proxy list:', error);
+  }
+}
 
-  if (host && port && username && password) {
-    const proxyUrl = `http://${username}:${password}@${host}:${port}`;
-    console.log(`🔄 Proxy agent initialized (${host}:${port})`);
-    return new HttpsProxyAgent(proxyUrl);
+// Initialize proxy list on module load
+loadProxyList();
+
+// Get next proxy from rotation
+function getNextProxy(): HttpsProxyAgent<string> | null {
+  if (proxyList.length === 0) {
+    return null;
+  }
+
+  const proxyString = proxyList[currentProxyIndex];
+  currentProxyIndex = (currentProxyIndex + 1) % proxyList.length;
+
+  try {
+    // Parse proxy format: host:port:username:password
+    const parts = proxyString.split(':');
+    if (parts.length >= 4) {
+      const host = parts[0];
+      const port = parts[1];
+      const username = parts.slice(2, -1).join(':'); // Handle username with colons
+      const password = parts[parts.length - 1];
+      
+      const proxyUrl = `http://${username}:${password}@${host}:${port}`;
+      return new HttpsProxyAgent(proxyUrl);
+    }
+  } catch (error) {
+    console.error('❌ Failed to parse proxy:', error);
   }
 
   return null;
@@ -24,21 +61,16 @@ function initializeProxyAgent(): HttpsProxyAgent<string> | null {
 
 // Enable proxy mode globally
 function enableProxyMode(): void {
-  if (!proxyEnabled && !proxyAgent) {
-    proxyAgent = initializeProxyAgent();
-    if (proxyAgent) {
-      proxyEnabled = true;
-      console.log('🔒 Proxy mode ENABLED - All subsequent requests will use IPRoyal proxies');
-    } else {
-      console.warn('⚠️  Proxy credentials not configured - continuing with direct connection');
-    }
+  if (!proxyEnabled) {
+    proxyEnabled = true;
+    console.log(`🔒 Proxy mode ENABLED - Rotating through ${proxyList.length} PyProxy proxies`);
   }
 }
 
 // Reset proxy mode (called at start of each batch scan)
 function resetProxyMode(): void {
   proxyEnabled = false;
-  proxyAgent = null;
+  currentProxyIndex = 0;
 }
 
 function normalizeShopifyUrl(url: string): string {
@@ -70,9 +102,12 @@ function extractStoreName(url: string): string {
 async function fetchWithProxy(url: string, options: RequestInit = {}): Promise<any> {
   const fetchOptions: any = { ...options };
   
-  // Add proxy agent if proxy mode is enabled
-  if (proxyEnabled && proxyAgent) {
-    fetchOptions.agent = proxyAgent;
+  // Add proxy agent if proxy mode is enabled (use next proxy from rotation)
+  if (proxyEnabled) {
+    const proxyAgent = getNextProxy();
+    if (proxyAgent) {
+      fetchOptions.agent = proxyAgent;
+    }
   }
   
   const response = await fetch(url, fetchOptions);
@@ -80,14 +115,23 @@ async function fetchWithProxy(url: string, options: RequestInit = {}): Promise<a
   // Detect 429 rate limit errors and enable proxy mode
   if (response.status === 429) {
     console.warn(`⚠️  HTTP 429 detected for ${url} - Shopify rate limit reached`);
-    enableProxyMode();
     
-    // If proxy was just enabled, retry the request with proxy
-    if (proxyEnabled && proxyAgent && !fetchOptions.agent) {
-      console.log(`🔄 Retrying request with proxy...`);
-      await delay(2000); // Wait 2 seconds before retry
-      fetchOptions.agent = proxyAgent;
-      return fetch(url, fetchOptions);
+    // Enable proxy mode if not already enabled
+    if (!proxyEnabled) {
+      enableProxyMode();
+      
+      // Retry the request with proxy
+      if (proxyList.length > 0) {
+        console.log(`🔄 Retrying request with PyProxy...`);
+        await delay(2000); // Wait 2 seconds before retry
+        const proxyAgent = getNextProxy();
+        if (proxyAgent) {
+          fetchOptions.agent = proxyAgent;
+        }
+        return fetch(url, fetchOptions);
+      } else {
+        console.warn('⚠️  No proxies available - continuing with direct connection');
+      }
     }
   }
   
