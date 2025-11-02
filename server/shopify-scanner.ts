@@ -3,6 +3,11 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Proxy configuration and state
 let proxyEnabled = false;
@@ -167,7 +172,13 @@ async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null
   return null;
 }
 
-export async function scanShopifyStore(url: string): Promise<ScanResult> {
+export async function scanShopifyStore(url: string, skipProxyReset = false): Promise<ScanResult> {
+  // Reset proxy mode for standalone scans (not batch scans)
+  if (!skipProxyReset) {
+    resetProxyMode();
+    console.log('🔄 Starting single store scan - proxy mode reset (direct connection)');
+  }
+  
   const scannedAt = new Date().toISOString();
   let normalizedUrl: string;
   let storeName: string;
@@ -352,9 +363,9 @@ export async function scanMultipleStores(
       await onProgress(i + 1, urls.length, storeName);
     }
     
-    // Scan all stores in this batch in parallel
+    // Scan all stores in this batch in parallel (skip proxy reset to maintain state across batch)
     const batchResults = await Promise.all(
-      batch.map(url => scanShopifyStore(url))
+      batch.map(url => scanShopifyStore(url, true))
     );
     
     results.push(...batchResults);

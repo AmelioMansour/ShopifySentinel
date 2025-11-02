@@ -1,277 +1,38 @@
 # Shopify Zero Price Scanner Discord Bot
 
 ## Overview
-A Discord bot that scans Shopify stores to identify products priced at $0.00. Users can scan individual stores or batch multiple stores using slash commands. Features include headless Shopify detection, pagination, add-to-cart links, and bulk cart functionality.
+A Discord bot designed to scan Shopify stores for products priced at $0.00. It supports scanning individual stores or batch processing multiple stores. The bot aims to provide users with tools to quickly identify, access, and add zero-price products to their cart, while also offering administrative oversight through logging and database integration. The business vision is to provide a valuable tool for users looking to capitalize on pricing errors or promotional offers on Shopify stores.
 
-## Features
-- `/scan` - Scan a single Shopify store for zero-price products with pagination
-- `/scanbatch` - Scan multiple Shopify stores at once (text file upload, max 25 URLs)
-- **Role-Based Permissions** - Commands require specific Discord role (ID: 1434562069893746698)
-- **Admin Channel Logging** - All scan results are sent to admin channel (ID: 1434557891318124798)
-- **Real-Time Progress Bar** - Live updates showing scan progress during batch operations
-- **Headless Shopify Auto-Detection** - Automatically tries `shop.` subdomain for headless stores
-- **Add-to-Cart Links** - Direct links to add products to cart instead of product pages
-- **Pagination** - Navigate through results with Previous/Next buttons (5 products per page)
-- **Bulk Add-to-Cart** - Get links to add all zero-price products at once with URL splitting
-- **Out-of-Stock Filtering** - Only shows in-stock zero-price products
-- Beautiful Discord embeds showing scan results
-- Support for both myshopify.com domains and custom domains
-- Error handling for invalid URLs and failed scans
+## User Preferences
+I prefer detailed explanations and clear communication. I want the agent to use iterative development and ask before making major changes. The agent should prioritize robust error handling and efficient resource usage, especially concerning external APIs and proxy management. Do not make changes to the folder `Z` and do not make changes to the file `Y`.
 
-## Architecture
+## System Architecture
 
-### Backend (`server/`)
-- **bot.ts** - Discord bot initialization, command registration, and interaction handlers
-- **discord-client.ts** - Discord authentication using Replit connector
-- **shopify-scanner.ts** - Core scanning logic to fetch and parse /products.json
-- **storage.ts** - Database interface for saving and retrieving scan results
-- **db.ts** - PostgreSQL database connection using Drizzle ORM
-- **index.ts** - Express server and bot startup
+### UI/UX Decisions
+- Discord embeds are used for presenting scan results, including store name, product details, pagination controls, and bulk add-to-cart options.
+- Real-time progress bars are implemented for batch scans to provide live updates.
+- Interactive navigation (Previous/Next buttons) is provided for paginating through products within a store and for navigating between stores in batch scan results.
+- A summarized table view is sent to an admin channel for easy oversight of all scans.
+- Results are delivered via Direct Message (DM) to the user for privacy and clarity.
 
-### Database (`shared/schema.ts`)
-- **scan_results** table - Stores scan history (only scans with free products)
-  - `id` - Auto-incrementing primary key
-  - `storeUrl` - The Shopify store URL scanned (unique constraint)
-  - `storeName` - Store name extracted from scan
-  - `freeProductCount` - Number of free products found (in stock)
-  - `totalProductsScanned` - Total products scanned in the store
-  - `discordUsername` - Discord username who initiated the scan
-  - `scannedAt` - Timestamp of when the scan was performed
-  - **Note**: Only scans with at least 1 free product are saved to the database
-  - **Upsert Behavior**: If a store is scanned multiple times, the database updates the existing record instead of creating duplicates
+### Technical Implementations
+- **Core Logic:** The bot fetches product data from `https://[store-domain]/products.json?limit=250&page=[N]`, filtering for `price === "0.00"` and `available === true`.
+- **Add-to-Cart Links:** Generates direct add-to-cart URLs in the format `https://[store-domain]/cart/[variantId]:1`.
+- **Bulk Add-to-Cart:** Supports adding multiple products to the cart via a single URL, with automatic URL splitting to bypass length limits.
+- **Headless Shopify Detection:** Automatically attempts `shop.` subdomain if the primary domain scan fails.
+- **Rate Limiting:** Implements delays (2-second between batches, 500ms between pagination requests) and processes 3 stores in parallel to prevent HTTP 429 errors.
+- **Discord Interaction Handling:** Uses deferred replies to handle long-running scan operations, extending the response window beyond the default 3 seconds.
+- **Error Handling:** Comprehensive error handling for invalid URLs, network issues, non-Shopify sites, and API failures.
+- **Role-Based Permissions:** Commands require a specific Discord role (ID: 1434562069893746698).
+- **Admin Channel Logging:** All scan results are summarized and sent to a designated admin channel (ID: 1434557891318124798).
 
-### Data Flow
-1. User invokes slash command in Discord
-2. Bot handler receives interaction
-3. Scanner fetches /products.json from Shopify store
-4. Parser filters for variants with price = "0.00"
-5. Results formatted as Discord embeds and sent to user's DM
-6. If free products found: Scan results saved to PostgreSQL database
-7. If free products found: Summarized table view sent to admin channel
+### System Design Choices
+- **Backend:** Node.js with TypeScript, Express for server, and Discord.js for bot interactions.
+- **Database:** PostgreSQL with Drizzle ORM for storing scan results. The `scan_results` table stores unique store URLs, free product counts, and scan metadata, with an upsert mechanism to update existing records. Only scans finding free products are saved.
+- **Modular Design:** Separation of concerns with dedicated modules for Discord interactions (`bot.ts`, `discord-client.ts`), Shopify scanning logic (`shopify-scanner.ts`), and database operations (`storage.ts`, `db.ts`).
+- **Smart Proxy Fallback:** The bot initially uses direct connections and only switches to rotating PyProxy proxies when a Shopify 429 error is detected. This optimizes proxy costs by using proxies only when necessary. Proxy details are loaded from `server/proxies.txt`.
 
-### Discord Integration
-- Uses Replit Discord connector for authentication
-- Bot token managed via OAuth connection
-- Slash commands registered globally
-
-## Usage
-
-### Commands
-```
-/scan url:https://store-name.myshopify.com
-/scanbatch file:[upload .txt file with one URL per line, max 25 URLs]
-```
-
-**Example batch file format (stores.txt):**
-```
-store1.myshopify.com
-store2.myshopify.com
-shop.hatch.co
-```
-
-**When to use each command:**
-- `/scan` - Quick single store check
-- `/scanbatch` - Batch scan of 1-25 stores
-
-**Permission Requirements:**
-- Users must have the required Discord role (ID: 1434562069893746698) to use any bot commands
-- Commands can only be used in Discord servers (not DMs)
-- Permission check is performed before any scan operation begins
-
-**Results Delivery:**
-- All scan results are sent via **Direct Message (DM)** to the user
-- An ephemeral confirmation appears in the channel when you run a command
-- Batch scans show real-time progress updates in your DMs
-- If you have DMs disabled, you'll receive an error message asking you to enable them
-
-### Example Scan Result
-
-**Single Store Scan (`/scan`):**
-The bot sends a paginated embed to your DMs showing:
-- Store name
-- Number of in-stock zero-price products found
-- Total products scanned
-- Product details (title, add-to-cart link)
-- Page navigation buttons (Previous/Next)
-- Bulk add-to-cart button for all products
-- Timestamp of scan
-
-**Batch Scan (`/scanbatch`):**
-The bot sends progress updates and results to your DMs with interactive dual-level navigation:
-- Real-time progress bar showing current store being scanned
-- Overall scan statistics (total stores, success/failed counts, total products found)
-- **Store Navigation**: Browse between different stores using Previous/Next Store buttons
-- **Product Navigation**: Scroll through products within a store using Previous/Next Products buttons (shown when store has >5 products)
-- Each product shows with a green 🟢 **FREE** indicator
-- Bulk add-to-cart button for each store
-- Footer showing store position and product range (e.g., "Store 2/5 • Products 6-10 of 18")
-
-**Admin Channel Summary:**
-All scan results are automatically sent to the admin channel (ID: 1434557891318124798) in a summarized table format:
-```
-📊 Scan Summary - Initiated by @username
-
-Store                                      Free  Total
-────────────────────────────────────────────────────────
-example-store.myshopify.com                  12    450
-another-shop.com                              5    230
-────────────────────────────────────────────────────────
-TOTAL                                        17    680
-
-✅ 2 store(s) scanned | 17 free products found
-```
-- Shows store names, free product counts, and total products scanned
-- Includes user attribution
-- All scans are saved to the database for historical tracking
-
-### Headless Shopify Detection
-For stores like hatch.co that use headless Shopify:
-1. Try scanning the main domain first
-2. If 404, automatically try `shop.` subdomain
-3. Example: `hatch.co` → auto-tries `shop.hatch.co`
-4. Works seamlessly without user intervention
-
-## Technical Details
-
-### Shopify API
-- Endpoint: `https://[store-domain]/products.json?limit=250&page=[N]`
-- No authentication required (public endpoint)
-- Pagination: Fetches up to 250 products per page, continues until all products scanned
-- Returns all products with variants and pricing
-- Filters variants where `price === "0.00"` AND `available === true`
-- Add-to-cart URL format: `https://[store-domain]/cart/[variantId]:1`
-- Bulk cart URL format: `https://[store-domain]/cart/[variantId1]:1,[variantId2]:1,...`
-
-### Rate Limiting
-To avoid Shopify's HTTP 429 (Too Many Requests) errors:
-- **Batch scans process 3 stores in parallel** (reduced from 10)
-- **2-second delay between each batch** of stores
-- **500ms delay between pagination requests** within each store
-- This spreads requests over time instead of flooding Shopify's servers
-- 25 stores now take ~30-40 seconds instead of instant (but won't fail)
-
-### Smart Proxy Fallback (Cost-Optimized)
-The bot includes intelligent proxy support to avoid rate limits **only when needed**:
-
-**How It Works:**
-1. **Starts with direct connections** - No proxy usage, completely free
-2. **Detects 429 errors automatically** - Watches for Shopify rate limit blocks
-3. **Switches to proxy mode** - After first 429, all subsequent requests use proxies
-4. **Retries failed request** - The blocked request is retried with proxy immediately
-5. **Stays enabled** - Once activated, proxy mode persists for the remainder of batch scans
-
-**Cost Savings:**
-- First ~50 scans typically complete without proxies (free)
-- Only uses proxy bandwidth when Shopify starts blocking
-- Saves **50-70% on proxy costs** compared to always-on proxies
-- IPRoyal rotating proxies: ~$2.76-3.68/GB
-
-**Setup (Optional):**
-If you experience 429 errors after heavy usage, add proxy credentials as deployment secrets:
-- `PROXY_HOST` - IPRoyal proxy host (e.g., `geo.iproyal.vip`)
-- `PROXY_PORT` - Proxy port (e.g., `8888`)
-- `PROXY_USERNAME` - Your proxy username
-- `PROXY_PASSWORD` - Your proxy password
-
-**Monitoring:**
-- Check deployment logs for `⚠️ HTTP 429 detected` - indicates Shopify is blocking
-- `🔒 Proxy mode ENABLED` - shows when bot switches to proxies
-- Track proxy usage to estimate monthly costs
-
-**Note:** Bot works perfectly without proxies for light usage. Only add credentials if you see persistent 429 errors.
-
-### URL Splitting
-- Discord and browsers have URL length limits (~2000 chars)
-- Bot automatically splits bulk cart URLs into multiple links
-- Each link contains as many products as possible
-- User gets numbered links (Link 1, Link 2, etc.)
-- Response messages are also split to avoid Discord's 2000 character message limit
-- Multiple follow-up messages are sent when needed to deliver all links
-
-### Discord Interaction Handling
-Discord gives bots only **3 seconds** to acknowledge a command interaction. Since scans can take 30-40 seconds with rate limiting:
-- Both `/scan` and `/scanbatch` commands **defer the reply immediately** (within milliseconds)
-- This extends the response window to **15 minutes**
-- Permission checks and file processing happen after deferring
-- All replies use `editReply()` instead of `reply()` after deferring
-- Prevents "Unknown interaction" and "Interaction already acknowledged" errors
-
-### Error Handling
-- Invalid URLs
-- Network failures
-- Non-Shopify websites
-- Deactivated/temporarily unavailable Shopify stores
-- Headless Shopify auto-detection fallback
-- Invalid file uploads (non-text files)
-- File URL limit validation (max 25 URLs)
-- Discord interaction timeout handling via deferred replies
-
-## Development
-The bot starts automatically when the server runs. It registers slash commands on startup and listens for interactions.
-
-## Deployment
-
-### Prerequisites
-Before deploying, you need to configure your Discord bot token as a deployment secret.
-
-### Step 1: Add Discord Bot Token to Deployment Secrets
-1. Navigate to the **Deployments** pane in your Replit workspace
-2. Click on the **Configuration** tab
-3. Scroll to the **Secrets** section
-4. Click **Add Secret**
-5. Add the following secret:
-   - **Name:** `DISCORD_BOT_TOKEN`
-   - **Value:** Your Discord bot token (from the Discord Developer Portal)
-
-### Step 2: Deploy
-1. Click the **Deploy** button in the Deployments pane
-2. The server will start on port 5000 (configured automatically)
-3. Check deployment logs - you should see:
-   - `✅ Bot logged in as [YOUR BOT NAME]`
-   - `✅ Bot is running and listening for commands`
-
-### Graceful Degradation
-The application is designed to handle missing configuration gracefully:
-- If `DISCORD_BOT_TOKEN` is not set, the server will still start successfully
-- You'll see warning messages in the logs indicating the bot couldn't start
-- This allows you to deploy the Express server even if you're not ready to configure the Discord bot yet
-
-### Troubleshooting
-**Bot not responding to commands:**
-- Verify `DISCORD_BOT_TOKEN` is set correctly in deployment secrets
-- Check deployment logs for connection errors
-- Ensure your bot has proper permissions in your Discord server
-
-**Deployment fails:**
-- Check that the application is binding to `0.0.0.0:5000` (already configured)
-- Review deployment logs for specific error messages
-
-## Recent Updates (November 2, 2025)
-- ✅ **Smart Proxy Fallback** - Bot now automatically switches to IPRoyal proxies only when 429 errors occur, saving 50-70% on costs
-- ✅ **Discord Interaction Timeout Fix** - Commands now defer replies immediately to avoid 3-second timeout errors
-- ✅ **Rate Limiting** - Fixed HTTP 429 errors by reducing parallel scans to 3 stores and adding delays
-- ✅ **Database Upsert** - Stores are now updated instead of creating duplicate entries on rescan
-- ✅ **Database Integration** - All scan results now saved to PostgreSQL database for historical tracking
-- ✅ **Admin Summary View** - Admin channel receives summarized table view showing all stores scanned
-- ✅ **Changed to DM delivery** - all scan results now sent via Direct Message instead of in-channel
-- ✅ Added role-based permissions - users must have specific role (ID: 1434562069893746698) to use commands
-- ✅ Implemented admin channel logging - all scan results sent to channel (ID: 1434557891318124798)
-- ✅ Removed `/scansuperbulk` command - simplified to just `/scan` and `/scanbatch`
-- ✅ Added graceful error handling for missing bot token during deployment
-- ✅ Implemented headless Shopify auto-detection (shop. subdomain)
-- ✅ Changed to add-to-cart links instead of product page links
-- ✅ Added pagination with Previous/Next buttons
-- ✅ Implemented out-of-stock filtering
-- ✅ Added bulk add-to-cart functionality with URL splitting
-- ✅ Fixed product scanning pagination - now scans entire store catalogs (250 products per page)
-- ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
-- ✅ Added real-time progress bar for batch scans showing current store and percentage complete
-- ✅ Implemented interactive store navigation for batch results with Previous/Next buttons to browse stores
-- ✅ Reduced progress update frequency to minimize Discord API calls and improve reliability
-- ✅ Fixed bulk cart link response message splitting to handle Discord's 2000 character limit
-
-## Future Enhancements
-- Historical tracking of price changes
-- Scheduled automated scans
-- Filtering by product type/vendor
-- Email notifications for new zero-price items
+## External Dependencies
+- **Discord API:** Used for bot interactions, command registration, message sending, and user authentication via Replit's Discord connector.
+- **PostgreSQL:** Database for storing scan history and results.
+- **PyProxy:** A third-party proxy service used for rotating residential proxies, activated only when Shopify rate limits are encountered. Proxies are loaded from a local `server/proxies.txt` file.
