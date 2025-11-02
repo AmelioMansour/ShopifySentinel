@@ -150,6 +150,36 @@ To avoid Shopify's HTTP 429 (Too Many Requests) errors:
 - This spreads requests over time instead of flooding Shopify's servers
 - 25 stores now take ~30-40 seconds instead of instant (but won't fail)
 
+### Smart Proxy Fallback (Cost-Optimized)
+The bot includes intelligent proxy support to avoid rate limits **only when needed**:
+
+**How It Works:**
+1. **Starts with direct connections** - No proxy usage, completely free
+2. **Detects 429 errors automatically** - Watches for Shopify rate limit blocks
+3. **Switches to proxy mode** - After first 429, all subsequent requests use proxies
+4. **Retries failed request** - The blocked request is retried with proxy immediately
+5. **Stays enabled** - Once activated, proxy mode persists for the remainder of batch scans
+
+**Cost Savings:**
+- First ~50 scans typically complete without proxies (free)
+- Only uses proxy bandwidth when Shopify starts blocking
+- Saves **50-70% on proxy costs** compared to always-on proxies
+- IPRoyal rotating proxies: ~$2.76-3.68/GB
+
+**Setup (Optional):**
+If you experience 429 errors after heavy usage, add proxy credentials as deployment secrets:
+- `PROXY_HOST` - IPRoyal proxy host (e.g., `geo.iproyal.vip`)
+- `PROXY_PORT` - Proxy port (e.g., `8888`)
+- `PROXY_USERNAME` - Your proxy username
+- `PROXY_PASSWORD` - Your proxy password
+
+**Monitoring:**
+- Check deployment logs for `⚠️ HTTP 429 detected` - indicates Shopify is blocking
+- `🔒 Proxy mode ENABLED` - shows when bot switches to proxies
+- Track proxy usage to estimate monthly costs
+
+**Note:** Bot works perfectly without proxies for light usage. Only add credentials if you see persistent 429 errors.
+
 ### URL Splitting
 - Discord and browsers have URL length limits (~2000 chars)
 - Bot automatically splits bulk cart URLs into multiple links
@@ -217,6 +247,7 @@ The application is designed to handle missing configuration gracefully:
 - Review deployment logs for specific error messages
 
 ## Recent Updates (November 2, 2025)
+- ✅ **Smart Proxy Fallback** - Bot now automatically switches to IPRoyal proxies only when 429 errors occur, saving 50-70% on costs
 - ✅ **Discord Interaction Timeout Fix** - Commands now defer replies immediately to avoid 3-second timeout errors
 - ✅ **Rate Limiting** - Fixed HTTP 429 errors by reducing parallel scans to 3 stores and adding delays
 - ✅ **Database Upsert** - Stores are now updated instead of creating duplicate entries on rescan

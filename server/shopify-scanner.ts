@@ -1,4 +1,45 @@
 import type { ScanResult, BatchScanResponse, ShopifyProduct } from '@shared/schema';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import fetch from 'node-fetch';
+
+// Proxy configuration and state
+let proxyEnabled = false;
+let proxyAgent: HttpsProxyAgent<string> | null = null;
+
+// Initialize proxy agent if credentials are available
+function initializeProxyAgent(): HttpsProxyAgent<string> | null {
+  const host = process.env.PROXY_HOST;
+  const port = process.env.PROXY_PORT;
+  const username = process.env.PROXY_USERNAME;
+  const password = process.env.PROXY_PASSWORD;
+
+  if (host && port && username && password) {
+    const proxyUrl = `http://${username}:${password}@${host}:${port}`;
+    console.log(`🔄 Proxy agent initialized (${host}:${port})`);
+    return new HttpsProxyAgent(proxyUrl);
+  }
+
+  return null;
+}
+
+// Enable proxy mode globally
+function enableProxyMode(): void {
+  if (!proxyEnabled && !proxyAgent) {
+    proxyAgent = initializeProxyAgent();
+    if (proxyAgent) {
+      proxyEnabled = true;
+      console.log('🔒 Proxy mode ENABLED - All subsequent requests will use IPRoyal proxies');
+    } else {
+      console.warn('⚠️  Proxy credentials not configured - continuing with direct connection');
+    }
+  }
+}
+
+// Reset proxy mode (called at start of each batch scan)
+function resetProxyMode(): void {
+  proxyEnabled = false;
+  proxyAgent = null;
+}
 
 function normalizeShopifyUrl(url: string): string {
   let normalized = url.trim();
@@ -25,6 +66,34 @@ function extractStoreName(url: string): string {
   }
 }
 
+// Helper function to make fetch requests with optional proxy support
+async function fetchWithProxy(url: string, options: RequestInit = {}): Promise<any> {
+  const fetchOptions: any = { ...options };
+  
+  // Add proxy agent if proxy mode is enabled
+  if (proxyEnabled && proxyAgent) {
+    fetchOptions.agent = proxyAgent;
+  }
+  
+  const response = await fetch(url, fetchOptions);
+  
+  // Detect 429 rate limit errors and enable proxy mode
+  if (response.status === 429) {
+    console.warn(`⚠️  HTTP 429 detected for ${url} - Shopify rate limit reached`);
+    enableProxyMode();
+    
+    // If proxy was just enabled, retry the request with proxy
+    if (proxyEnabled && proxyAgent && !fetchOptions.agent) {
+      console.log(`🔄 Retrying request with proxy...`);
+      await delay(2000); // Wait 2 seconds before retry
+      fetchOptions.agent = proxyAgent;
+      return fetch(url, fetchOptions);
+    }
+  }
+  
+  return response;
+}
+
 async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null> {
   try {
     const urlObj = new URL(originalUrl);
@@ -35,7 +104,7 @@ async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null
       const shopUrl = `${urlObj.protocol}//shop.${hostname}`;
       
       try {
-        const response = await fetch(`${shopUrl}/products.json`, { 
+        const response = await fetchWithProxy(`${shopUrl}/products.json`, { 
           signal: AbortSignal.timeout(5000) // 5 second timeout
         });
         
@@ -77,7 +146,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
   try {
     // Start with a test request to check if the store exists
     const testUrl = `${normalizedUrl}/products.json?limit=1`;
-    let response = await fetch(testUrl);
+    let response = await fetchWithProxy(testUrl);
     let actualUrl = normalizedUrl;
     
     // If 404, try headless Shopify pattern (shop. subdomain)
@@ -87,7 +156,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
       if (headlessUrl) {
         actualUrl = headlessUrl;
         storeName = extractStoreName(headlessUrl);
-        response = await fetch(`${headlessUrl}/products.json?limit=1`);
+        response = await fetchWithProxy(`${headlessUrl}/products.json?limit=1`);
       }
     }
     
@@ -129,7 +198,7 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
     
     while (hasMore) {
       const paginatedUrl = `${actualUrl}/products.json?limit=250&page=${page}`;
-      const pageResponse = await fetch(paginatedUrl);
+      const pageResponse = await fetchWithProxy(paginatedUrl);
       
       if (!pageResponse.ok) {
         break;
@@ -210,6 +279,10 @@ export async function scanMultipleStores(
   onProgress?: (current: number, total: number, storeName: string) => Promise<void>,
   batchSize: number = 3
 ): Promise<BatchScanResponse> {
+  // Reset proxy mode at start of each batch scan
+  resetProxyMode();
+  console.log('🔄 Starting new batch scan - proxy mode reset (direct connection)');
+  
   const BATCH_SIZE = batchSize; // Configurable batch size (default 3 to avoid rate limiting)
   const PROGRESS_UPDATE_INTERVAL = 10; // Update progress every 10 stores
   const BATCH_DELAY_MS = 2000; // 2 second delay between batches to avoid rate limiting
