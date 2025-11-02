@@ -31,13 +31,14 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 ### Database (`shared/schema.ts`)
 - **scan_results** table - Stores scan history (only scans with free products)
   - `id` - Auto-incrementing primary key
-  - `storeUrl` - The Shopify store URL scanned
+  - `storeUrl` - The Shopify store URL scanned (unique constraint)
   - `storeName` - Store name extracted from scan
   - `freeProductCount` - Number of free products found (in stock)
   - `totalProductsScanned` - Total products scanned in the store
   - `discordUsername` - Discord username who initiated the scan
   - `scannedAt` - Timestamp of when the scan was performed
   - **Note**: Only scans with at least 1 free product are saved to the database
+  - **Upsert Behavior**: If a store is scanned multiple times, the database updates the existing record instead of creating duplicates
 
 ### Data Flow
 1. User invokes slash command in Discord
@@ -141,6 +142,14 @@ For stores like hatch.co that use headless Shopify:
 - Add-to-cart URL format: `https://[store-domain]/cart/[variantId]:1`
 - Bulk cart URL format: `https://[store-domain]/cart/[variantId1]:1,[variantId2]:1,...`
 
+### Rate Limiting
+To avoid Shopify's HTTP 429 (Too Many Requests) errors:
+- **Batch scans process 3 stores in parallel** (reduced from 10)
+- **2-second delay between each batch** of stores
+- **500ms delay between pagination requests** within each store
+- This spreads requests over time instead of flooding Shopify's servers
+- 25 stores now take ~30-40 seconds instead of instant (but won't fail)
+
 ### URL Splitting
 - Discord and browsers have URL length limits (~2000 chars)
 - Bot automatically splits bulk cart URLs into multiple links
@@ -200,6 +209,8 @@ The application is designed to handle missing configuration gracefully:
 - Review deployment logs for specific error messages
 
 ## Recent Updates (November 2, 2025)
+- ✅ **Rate Limiting** - Fixed HTTP 429 errors by reducing parallel scans to 3 stores and adding delays
+- ✅ **Database Upsert** - Stores are now updated instead of creating duplicate entries on rescan
 - ✅ **Database Integration** - All scan results now saved to PostgreSQL database for historical tracking
 - ✅ **Admin Summary View** - Admin channel receives summarized table view showing all stores scanned
 - ✅ **Changed to DM delivery** - all scan results now sent via Direct Message instead of in-channel
@@ -216,7 +227,6 @@ The application is designed to handle missing configuration gracefully:
 - ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
 - ✅ Added real-time progress bar for batch scans showing current store and percentage complete
 - ✅ Implemented interactive store navigation for batch results with Previous/Next buttons to browse stores
-- ✅ Optimized batch scanning with 10 parallel stores for better performance
 - ✅ Reduced progress update frequency to minimize Discord API calls and improve reliability
 - ✅ Fixed bulk cart link response message splitting to handle Discord's 2000 character limit
 
