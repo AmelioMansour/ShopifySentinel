@@ -235,37 +235,32 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 
   const result = await scanShopifyStore(url);
   
-  let embedToLog;
-  
   // Try to send results via DM
   try {
     if (!result.success || result.zeroPriceProducts.length === 0) {
       const embed = createScanResultEmbed(result);
-      embedToLog = embed;
       await interaction.user.send({ embeds: [embed] });
-      return;
+    } else {
+      // Store pagination data
+      const dataId = `${interaction.user.id}_${Date.now()}`;
+      paginationData.set(dataId, {
+        products: result.zeroPriceProducts,
+        storeUrl: result.storeUrl,
+        storeName: result.storeName,
+        totalProducts: result.productsFound
+      });
+
+      const { embed, components } = createPaginatedEmbed(
+        result.zeroPriceProducts,
+        0,
+        result.storeUrl,
+        result.storeName,
+        result.productsFound,
+        dataId
+      );
+      
+      await interaction.user.send({ embeds: [embed], components });
     }
-
-    // Store pagination data
-    const dataId = `${interaction.user.id}_${Date.now()}`;
-    paginationData.set(dataId, {
-      products: result.zeroPriceProducts,
-      storeUrl: result.storeUrl,
-      storeName: result.storeName,
-      totalProducts: result.productsFound
-    });
-
-    const { embed, components } = createPaginatedEmbed(
-      result.zeroPriceProducts,
-      0,
-      result.storeUrl,
-      result.storeName,
-      result.productsFound,
-      dataId
-    );
-    
-    embedToLog = embed;
-    await interaction.user.send({ embeds: [embed], components });
   } catch (error) {
     console.error('Error sending DM:', error);
     // Follow up if DM fails
