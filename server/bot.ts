@@ -193,47 +193,61 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 
   const url = interaction.options.getString('url', true);
   
-  await interaction.deferReply();
+  // Reply in channel that results will be sent via DM
+  await interaction.reply({ 
+    content: '🔍 Scanning... Results will be sent to your DMs!', 
+    ephemeral: true 
+  });
 
   const result = await scanShopifyStore(url);
   
-  if (!result.success || result.zeroPriceProducts.length === 0) {
-    const embed = createScanResultEmbed(result);
-    await interaction.editReply({ embeds: [embed] });
+  // Try to send results via DM
+  try {
+    if (!result.success || result.zeroPriceProducts.length === 0) {
+      const embed = createScanResultEmbed(result);
+      await interaction.user.send({ embeds: [embed] });
+      
+      // Send results to admin channel
+      await sendToAdminChannel({ 
+        embeds: [embed],
+        content: `Scan initiated by <@${interaction.user.id}>`
+      });
+      return;
+    }
+
+    // Store pagination data
+    const dataId = `${interaction.user.id}_${Date.now()}`;
+    paginationData.set(dataId, {
+      products: result.zeroPriceProducts,
+      storeUrl: result.storeUrl,
+      storeName: result.storeName,
+      totalProducts: result.productsFound
+    });
+
+    const { embed, components } = createPaginatedEmbed(
+      result.zeroPriceProducts,
+      0,
+      result.storeUrl,
+      result.storeName,
+      result.productsFound,
+      dataId
+    );
+    
+    await interaction.user.send({ embeds: [embed], components });
     
     // Send results to admin channel
     await sendToAdminChannel({ 
       embeds: [embed],
       content: `Scan initiated by <@${interaction.user.id}>`
     });
-    return;
+  } catch (error) {
+    console.error('Error sending DM:', error);
+    // Follow up if DM fails
+    await interaction.followUp({ 
+      content: '❌ Could not send you a DM. Please check your privacy settings to allow DMs from server members.', 
+      ephemeral: true 
+    });
   }
-
-  // Store pagination data
-  const dataId = `${interaction.user.id}_${Date.now()}`;
-  paginationData.set(dataId, {
-    products: result.zeroPriceProducts,
-    storeUrl: result.storeUrl,
-    storeName: result.storeName,
-    totalProducts: result.productsFound
-  });
-
-  const { embed, components } = createPaginatedEmbed(
-    result.zeroPriceProducts,
-    0,
-    result.storeUrl,
-    result.storeName,
-    result.productsFound,
-    dataId
-  );
-  
-  await interaction.editReply({ embeds: [embed], components });
-  
-  // Send results to admin channel
-  await sendToAdminChannel({ 
-    embeds: [embed],
-    content: `Scan initiated by <@${interaction.user.id}>`
-  });
 }
 
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
@@ -253,13 +267,17 @@ async function handleBatchScan(
 ) {
   const attachment = interaction.options.getAttachment('file', true);
 
-  // Defer reply first
-  await interaction.deferReply();
+  // Reply in channel that scan is starting
+  await interaction.reply({ 
+    content: '🔍 Starting batch scan... Progress updates and results will be sent to your DMs!', 
+    ephemeral: true 
+  });
 
   // Validate file type
   if (!attachment.contentType?.includes('text') && !attachment.name.endsWith('.txt')) {
-    await interaction.editReply({ 
-      content: '❌ Please upload a text file (.txt) with one store URL per line'
+    await interaction.followUp({ 
+      content: '❌ Please upload a text file (.txt) with one store URL per line',
+      ephemeral: true
     });
     return;
   }
@@ -276,27 +294,43 @@ async function handleBatchScan(
       .filter(url => url.length > 0);
 
     if (urls.length === 0) {
-      await interaction.editReply({ content: '❌ No URLs found in file. Please provide at least one URL per line.' });
-      return;
-    }
-
-    if (urls.length > maxUrls) {
-      await interaction.editReply({ 
-        content: `❌ Too many URLs! Found ${urls.length} URLs but maximum is ${maxUrls}. Please reduce the number of stores in your file.` 
+      await interaction.followUp({ 
+        content: '❌ No URLs found in file. Please provide at least one URL per line.',
+        ephemeral: true
       });
       return;
     }
 
-    // Create progress callback
+    if (urls.length > maxUrls) {
+      await interaction.followUp({ 
+        content: `❌ Too many URLs! Found ${urls.length} URLs but maximum is ${maxUrls}. Please reduce the number of stores in your file.`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Store the last progress message so we can update it
+    let lastProgressMessage: any = null;
+
+    // Create progress callback - send to DM
     const onProgress = async (current: number, total: number, storeName: string) => {
-      const progressBar = createProgressBar(current, total);
-      const embed = new EmbedBuilder()
-        .setTitle(`🔄 ${scanType} Scan in Progress`)
-        .setColor(0x3b82f6)
-        .setDescription(`Scanning store **${current}** of **${total}**\n\n${progressBar}\n\nCurrent: \`${storeName}\``)
-        .setTimestamp();
-      
-      await interaction.editReply({ embeds: [embed] });
+      try {
+        const progressBar = createProgressBar(current, total);
+        const embed = new EmbedBuilder()
+          .setTitle(`🔄 ${scanType} Scan in Progress`)
+          .setColor(0x3b82f6)
+          .setDescription(`Scanning store **${current}** of **${total}**\n\n${progressBar}\n\nCurrent: \`${storeName}\``)
+          .setTimestamp();
+        
+        // Update or send progress in DM
+        if (lastProgressMessage) {
+          await lastProgressMessage.edit({ embeds: [embed] });
+        } else {
+          lastProgressMessage = await interaction.user.send({ embeds: [embed] });
+        }
+      } catch (error) {
+        console.error('Error sending progress update to DM:', error);
+      }
     };
 
     const batchResponse = await scanMultipleStores(urls, onProgress, batchSize);
@@ -306,19 +340,34 @@ async function handleBatchScan(
     batchResultsData.set(batchDataId, batchResponse);
     batchNavState.set(batchDataId, { storeIndex: 0, productPage: 0 });
     
-    // Show summary and first store with results
-    const { embed, components } = createBatchNavigationEmbed(batchResponse, 0, 0, batchDataId);
-    await interaction.editReply({ embeds: [embed], components });
-    
-    // Send results to admin channel
-    await sendToAdminChannel({ 
-      embeds: [embed],
-      content: `Batch scan initiated by <@${interaction.user.id}> - ${urls.length} stores scanned`
-    });
+    // Try to send results via DM
+    try {
+      // Delete progress message if it exists
+      if (lastProgressMessage) {
+        await lastProgressMessage.delete();
+      }
+
+      // Show summary and first store with results in DM
+      const { embed, components } = createBatchNavigationEmbed(batchResponse, 0, 0, batchDataId);
+      await interaction.user.send({ embeds: [embed], components });
+      
+      // Send results to admin channel
+      await sendToAdminChannel({ 
+        embeds: [embed],
+        content: `Batch scan initiated by <@${interaction.user.id}> - ${urls.length} stores scanned`
+      });
+    } catch (error) {
+      console.error('Error sending DM:', error);
+      await interaction.followUp({ 
+        content: '❌ Could not send you a DM. Please check your privacy settings to allow DMs from server members.', 
+        ephemeral: true 
+      });
+    }
   } catch (error) {
     console.error('Error processing file:', error);
-    await interaction.editReply({ 
-      content: '❌ Failed to read the file. Please make sure it\'s a valid text file with one URL per line.' 
+    await interaction.followUp({ 
+      content: '❌ Failed to read the file. Please make sure it\'s a valid text file with one URL per line.',
+      ephemeral: true
     });
   }
 }
