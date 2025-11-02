@@ -30,7 +30,7 @@ I prefer detailed explanations and clear communication. I want the agent to use 
 - **Backend:** Node.js with TypeScript, Express for server, and Discord.js for bot interactions.
 - **Database:** PostgreSQL with Drizzle ORM for storing scan results. The `scan_results` table stores unique store URLs, free product counts, and scan metadata, with an upsert mechanism to update existing records. Only scans finding free products are saved.
 - **Modular Design:** Separation of concerns with dedicated modules for Discord interactions (`bot.ts`, `discord-client.ts`), Shopify scanning logic (`shopify-scanner.ts`), and database operations (`storage.ts`, `db.ts`).
-- **Smart Proxy Fallback:** The bot initially uses direct connections and only switches to rotating PyProxy proxies when a Shopify 429 error is detected. This optimizes proxy costs by using proxies only when necessary. Proxy details are loaded from `server/proxies.txt`.
+- **Proxy System:** The bot uses rotating PyProxy residential proxies by default for all requests (1000 proxies loaded from `server/proxies.txt`). Includes automatic retry with exponential backoff (1s, 2s, 4s) on 429 rate limit errors.
 
 ## External Dependencies
 - **Discord API:** Used for bot interactions, command registration, message sending, and user authentication via Replit's Discord connector.

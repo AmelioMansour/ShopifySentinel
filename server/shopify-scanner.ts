@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Proxy configuration and state
-let proxyEnabled = false;
+let proxyEnabled = true; // Always use proxies by default (we have 1000!)
 let proxyList: string[] = [];
 let currentProxyIndex = 0;
 
@@ -74,19 +74,6 @@ function getNextProxy(): HttpsProxyAgent<string> | null {
   return null;
 }
 
-// Enable proxy mode globally
-function enableProxyMode(): void {
-  if (!proxyEnabled) {
-    proxyEnabled = true;
-    console.log(`🔒 Proxy mode ENABLED - Rotating through ${proxyList.length} PyProxy proxies`);
-  }
-}
-
-// Reset proxy mode (called at start of each batch scan)
-function resetProxyMode(): void {
-  proxyEnabled = false;
-  currentProxyIndex = 0;
-}
 
 function normalizeShopifyUrl(url: string): string {
   let normalized = url.trim();
@@ -113,41 +100,25 @@ function extractStoreName(url: string): string {
   }
 }
 
-// Helper function to make fetch requests with optional proxy support
-async function fetchWithProxy(url: string, options: RequestInit = {}): Promise<any> {
+// Helper function to make fetch requests with proxy rotation and retry logic
+async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
   const fetchOptions: any = { ...options };
+  const MAX_RETRIES = 3;
   
-  // Add proxy agent if proxy mode is enabled (use next proxy from rotation)
-  if (proxyEnabled) {
-    const proxyAgent = getNextProxy();
-    if (proxyAgent) {
-      fetchOptions.agent = proxyAgent;
-    }
+  // Always use next proxy from rotation (proxies enabled by default)
+  const proxyAgent = getNextProxy();
+  if (proxyAgent) {
+    fetchOptions.agent = proxyAgent;
   }
   
   const response = await fetch(url, fetchOptions);
   
-  // Detect 429 rate limit errors and enable proxy mode
-  if (response.status === 429) {
-    console.warn(`⚠️  HTTP 429 detected for ${url} - Shopify rate limit reached`);
-    
-    // Enable proxy mode if not already enabled
-    if (!proxyEnabled) {
-      enableProxyMode();
-      
-      // Retry the request with proxy
-      if (proxyList.length > 0) {
-        console.log(`🔄 Retrying request with PyProxy...`);
-        await delay(2000); // Wait 2 seconds before retry
-        const proxyAgent = getNextProxy();
-        if (proxyAgent) {
-          fetchOptions.agent = proxyAgent;
-        }
-        return fetch(url, fetchOptions);
-      } else {
-        console.warn('⚠️  No proxies available - continuing with direct connection');
-      }
-    }
+  // Retry on 429 rate limit errors with exponential backoff
+  if (response.status === 429 && retryCount < MAX_RETRIES && proxyList.length > 0) {
+    const backoffMs = 1000 * Math.pow(2, retryCount); // 1s, 2s, 4s
+    console.warn(`⚠️  HTTP 429 detected for ${url} - retrying in ${backoffMs}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+    await delay(backoffMs);
+    return fetchWithProxy(url, options, retryCount + 1);
   }
   
   return response;
@@ -183,12 +154,6 @@ async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null
 }
 
 export async function scanShopifyStore(url: string, skipProxyReset = false): Promise<ScanResult> {
-  // Reset proxy mode for standalone scans (not batch scans)
-  if (!skipProxyReset) {
-    resetProxyMode();
-    console.log('🔄 Starting single store scan - proxy mode reset (direct connection)');
-  }
-  
   const scannedAt = new Date().toISOString();
   let normalizedUrl: string;
   let storeName: string;
@@ -344,9 +309,7 @@ export async function scanMultipleStores(
   onProgress?: (current: number, total: number, storeName: string) => Promise<void>,
   batchSize: number = 3
 ): Promise<BatchScanResponse> {
-  // Reset proxy mode at start of each batch scan
-  resetProxyMode();
-  console.log('🔄 Starting new batch scan - proxy mode reset (direct connection)');
+  console.log(`🔄 Starting batch scan of ${urls.length} stores using ${proxyList.length} rotating proxies`);
   
   const BATCH_SIZE = batchSize; // Process batchSize stores in parallel (10 with proxies)
   const BATCH_DELAY_MS = 1000; // 1 second delay between batches (proxies help avoid rate limiting)
