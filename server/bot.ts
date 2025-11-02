@@ -269,19 +269,21 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
       ephemeral: true 
     });
   } finally {
-    // Save to database and send summary to admin channel (only if free products found)
-    if (result.success && result.zeroPriceProducts.length > 0) {
+    // Always send summary to admin channel, only save to database if free products found
+    if (result.success) {
       try {
-        // Save to database
-        await storage.saveScanResult({
-          storeUrl: result.storeUrl,
-          storeName: result.storeName,
-          freeProductCount: result.zeroPriceProducts.length,
-          totalProductsScanned: result.productsFound,
-          discordUsername: interaction.user.username,
-        });
+        // Save to database only if free products found
+        if (result.zeroPriceProducts.length > 0) {
+          await storage.saveScanResult({
+            storeUrl: result.storeUrl,
+            storeName: result.storeName,
+            freeProductCount: result.zeroPriceProducts.length,
+            totalProductsScanned: result.productsFound,
+            discordUsername: interaction.user.username,
+          });
+        }
 
-        // Send summarized table view to admin channel
+        // Send summarized table view to admin channel (always, even for 0 free products)
         const summaryMessage = createAdminSummaryMessage(interaction.user.username, [{
           storeUrl: result.storeUrl,
           storeName: result.storeName,
@@ -407,22 +409,24 @@ async function handleBatchScan(
         ephemeral: true 
       });
     } finally {
-      // Save all successful scans to database and send summary to admin channel (only stores with free items)
+      // Save to database (only stores with free items) and send summary to admin channel (all stores)
       try {
         const summaryData = [];
         
         for (const result of batchResponse.results) {
-          if (result.success && result.zeroPriceProducts.length > 0) {
-            // Save to database
-            await storage.saveScanResult({
-              storeUrl: result.storeUrl,
-              storeName: result.storeName,
-              freeProductCount: result.zeroPriceProducts.length,
-              totalProductsScanned: result.productsFound,
-              discordUsername: interaction.user.username,
-            });
+          if (result.success) {
+            // Save to database only if free products found
+            if (result.zeroPriceProducts.length > 0) {
+              await storage.saveScanResult({
+                storeUrl: result.storeUrl,
+                storeName: result.storeName,
+                freeProductCount: result.zeroPriceProducts.length,
+                totalProductsScanned: result.productsFound,
+                discordUsername: interaction.user.username,
+              });
+            }
 
-            // Add to summary
+            // Add all successful scans to summary (including 0 free products)
             summaryData.push({
               storeUrl: result.storeUrl,
               storeName: result.storeName,
