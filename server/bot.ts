@@ -305,14 +305,14 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
     return;
   }
   
-  await handleBatchScan(interaction, 25, 'Batch', 10); // 10 parallel stores
+  await handleBatchScan(interaction, 25, 'Batch', 3); // 3 parallel stores to avoid rate limiting
 }
 
 async function handleBatchScan(
   interaction: ChatInputCommandInteraction, 
   maxUrls: number,
   scanType: string,
-  batchSize: number = 10
+  batchSize: number = 3
 ) {
   const attachment = interaction.options.getAttachment('file', true);
 

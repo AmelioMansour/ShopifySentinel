@@ -147,6 +147,9 @@ export async function scanShopifyStore(url: string): Promise<ScanResult> {
         // If we got less than 250 products, this is the last page
         if (products.length < 250) {
           hasMore = false;
+        } else {
+          // Add delay between pagination requests to avoid rate limiting
+          await delay(500);
         }
       }
     }
@@ -205,10 +208,11 @@ async function delay(ms: number): Promise<void> {
 export async function scanMultipleStores(
   urls: string[], 
   onProgress?: (current: number, total: number, storeName: string) => Promise<void>,
-  batchSize: number = 10
+  batchSize: number = 3
 ): Promise<BatchScanResponse> {
-  const BATCH_SIZE = batchSize; // Configurable batch size
+  const BATCH_SIZE = batchSize; // Configurable batch size (default 3 to avoid rate limiting)
   const PROGRESS_UPDATE_INTERVAL = 10; // Update progress every 10 stores
+  const BATCH_DELAY_MS = 2000; // 2 second delay between batches to avoid rate limiting
   const results: ScanResult[] = [];
   
   // Process stores in batches
@@ -237,6 +241,11 @@ export async function scanMultipleStores(
     );
     
     results.push(...batchResults);
+    
+    // Add delay between batches (except after the last batch) to avoid rate limiting
+    if (i + BATCH_SIZE < urls.length) {
+      await delay(BATCH_DELAY_MS);
+    }
   }
 
   const successfulScans = results.filter(r => r.success).length;
