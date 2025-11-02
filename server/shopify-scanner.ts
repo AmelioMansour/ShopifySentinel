@@ -3,11 +3,6 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-
-// Get __dirname equivalent in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Proxy configuration and state
 let proxyEnabled = false;
@@ -17,16 +12,31 @@ let currentProxyIndex = 0;
 // Load proxy list from file on startup
 function loadProxyList(): void {
   try {
-    const proxyFilePath = path.join(__dirname, 'proxies.txt');
-    if (fs.existsSync(proxyFilePath)) {
+    // Try multiple possible paths for the proxy file
+    const possiblePaths = [
+      path.join(process.cwd(), 'server', 'proxies.txt'),
+      'server/proxies.txt',
+      './server/proxies.txt',
+    ];
+    
+    let proxyFilePath = '';
+    for (const testPath of possiblePaths) {
+      if (fs.existsSync(testPath)) {
+        proxyFilePath = testPath;
+        break;
+      }
+    }
+    
+    if (proxyFilePath && fs.existsSync(proxyFilePath)) {
       const fileContent = fs.readFileSync(proxyFilePath, 'utf-8');
       proxyList = fileContent
         .split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
-      console.log(`✅ Loaded ${proxyList.length} PyProxy proxies from file`);
+      console.log(`✅ Loaded ${proxyList.length} PyProxy proxies from ${proxyFilePath}`);
     } else {
-      console.warn('⚠️  No proxy file found at server/proxies.txt');
+      console.warn('⚠️  No proxy file found. Tried paths:', possiblePaths);
+      console.warn('⚠️  Bot will work without proxies until 429 errors occur');
     }
   } catch (error) {
     console.error('❌ Failed to load proxy list:', error);
