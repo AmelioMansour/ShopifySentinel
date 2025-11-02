@@ -136,12 +136,13 @@ const batchNavState = new Map<string, {
 }>();
 
 // Check if user has required role
-async function checkUserPermission(interaction: ChatInputCommandInteraction): Promise<boolean> {
+async function checkUserPermission(interaction: ChatInputCommandInteraction, deferred: boolean = false): Promise<boolean> {
   if (!interaction.guild || !interaction.member) {
-    await interaction.reply({ 
-      content: '❌ This command can only be used in a server.', 
-      ephemeral: true 
-    });
+    if (deferred) {
+      await interaction.editReply({ content: '❌ This command can only be used in a server.' });
+    } else {
+      await interaction.reply({ content: '❌ This command can only be used in a server.', ephemeral: true });
+    }
     return false;
   }
 
@@ -162,10 +163,11 @@ async function checkUserPermission(interaction: ChatInputCommandInteraction): Pr
   }
 
   if (!hasRole) {
-    await interaction.reply({ 
-      content: '❌ You do not have permission to use this command. Required role is missing.', 
-      ephemeral: true 
-    });
+    if (deferred) {
+      await interaction.editReply({ content: '❌ You do not have permission to use this command. Required role is missing.' });
+    } else {
+      await interaction.reply({ content: '❌ You do not have permission to use this command. Required role is missing.', ephemeral: true });
+    }
     return false;
   }
 
@@ -220,17 +222,19 @@ function createAdminSummaryMessage(
 }
 
 async function handleScanCommand(interaction: ChatInputCommandInteraction) {
-  // Check permissions first
-  if (!await checkUserPermission(interaction)) {
+  // Defer reply immediately to avoid timeout
+  await interaction.deferReply({ ephemeral: true });
+  
+  // Check permissions
+  if (!await checkUserPermission(interaction, true)) {
     return;
   }
 
   const url = interaction.options.getString('url', true);
   
-  // Reply in channel that results will be sent via DM
-  await interaction.reply({ 
-    content: '🔍 Scanning... Results will be sent to your DMs!', 
-    ephemeral: true 
+  // Update deferred reply
+  await interaction.editReply({ 
+    content: '🔍 Scanning... Results will be sent to your DMs!'
   });
 
   const result = await scanShopifyStore(url);
@@ -300,8 +304,11 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 }
 
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
-  // Check permissions first
-  if (!await checkUserPermission(interaction)) {
+  // Defer reply immediately to avoid timeout
+  await interaction.deferReply({ ephemeral: true });
+  
+  // Check permissions
+  if (!await checkUserPermission(interaction, true)) {
     return;
   }
   
@@ -316,10 +323,9 @@ async function handleBatchScan(
 ) {
   const attachment = interaction.options.getAttachment('file', true);
 
-  // Reply in channel that scan is starting
-  await interaction.reply({ 
-    content: '🔍 Starting batch scan... Progress updates and results will be sent to your DMs!', 
-    ephemeral: true 
+  // Update deferred reply
+  await interaction.editReply({ 
+    content: '🔍 Starting batch scan... Progress updates and results will be sent to your DMs!'
   });
 
   // Validate file type

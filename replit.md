@@ -158,6 +158,14 @@ To avoid Shopify's HTTP 429 (Too Many Requests) errors:
 - Response messages are also split to avoid Discord's 2000 character message limit
 - Multiple follow-up messages are sent when needed to deliver all links
 
+### Discord Interaction Handling
+Discord gives bots only **3 seconds** to acknowledge a command interaction. Since scans can take 30-40 seconds with rate limiting:
+- Both `/scan` and `/scanbatch` commands **defer the reply immediately** (within milliseconds)
+- This extends the response window to **15 minutes**
+- Permission checks and file processing happen after deferring
+- All replies use `editReply()` instead of `reply()` after deferring
+- Prevents "Unknown interaction" and "Interaction already acknowledged" errors
+
 ### Error Handling
 - Invalid URLs
 - Network failures
@@ -166,7 +174,7 @@ To avoid Shopify's HTTP 429 (Too Many Requests) errors:
 - Headless Shopify auto-detection fallback
 - Invalid file uploads (non-text files)
 - File URL limit validation (max 25 URLs)
-- Rate limiting (future enhancement)
+- Discord interaction timeout handling via deferred replies
 
 ## Development
 The bot starts automatically when the server runs. It registers slash commands on startup and listens for interactions.
@@ -209,6 +217,7 @@ The application is designed to handle missing configuration gracefully:
 - Review deployment logs for specific error messages
 
 ## Recent Updates (November 2, 2025)
+- ✅ **Discord Interaction Timeout Fix** - Commands now defer replies immediately to avoid 3-second timeout errors
 - ✅ **Rate Limiting** - Fixed HTTP 429 errors by reducing parallel scans to 3 stores and adding delays
 - ✅ **Database Upsert** - Stores are now updated instead of creating duplicate entries on rescan
 - ✅ **Database Integration** - All scan results now saved to PostgreSQL database for historical tracking
