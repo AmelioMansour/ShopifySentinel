@@ -10,7 +10,8 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ComponentType,
-  TextChannel
+  TextChannel,
+  MessageFlags
 } from 'discord.js';
 import { getUncachableDiscordClient } from './discord-client';
 import { scanShopifyStore, scanMultipleStores } from './shopify-scanner';
@@ -62,7 +63,7 @@ export async function startBot() {
           if (interaction.deferred || interaction.replied) {
             await interaction.editReply({ content: `❌ Error: ${errorMessage}` });
           } else {
-            await interaction.reply({ content: `❌ Error: ${errorMessage}`, ephemeral: true });
+            await interaction.reply({ content: `❌ Error: ${errorMessage}`, flags: [MessageFlags.Ephemeral] });
           }
         }
       }
@@ -141,7 +142,7 @@ async function checkUserPermission(interaction: ChatInputCommandInteraction, def
     if (deferred) {
       await interaction.editReply({ content: '❌ This command can only be used in a server.' });
     } else {
-      await interaction.reply({ content: '❌ This command can only be used in a server.', ephemeral: true });
+      await interaction.reply({ content: '❌ This command can only be used in a server.', flags: [MessageFlags.Ephemeral] });
     }
     return false;
   }
@@ -166,7 +167,7 @@ async function checkUserPermission(interaction: ChatInputCommandInteraction, def
     if (deferred) {
       await interaction.editReply({ content: '❌ You do not have permission to use this command. Required role is missing.' });
     } else {
-      await interaction.reply({ content: '❌ You do not have permission to use this command. Required role is missing.', ephemeral: true });
+      await interaction.reply({ content: '❌ You do not have permission to use this command. Required role is missing.', flags: [MessageFlags.Ephemeral] });
     }
     return false;
   }
@@ -223,7 +224,7 @@ function createAdminSummaryMessage(
 
 async function handleScanCommand(interaction: ChatInputCommandInteraction) {
   // Defer reply immediately to avoid timeout
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
   
   // Check permissions
   if (!await checkUserPermission(interaction, true)) {
@@ -270,7 +271,7 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
     // Follow up if DM fails
     await interaction.followUp({ 
       content: '❌ Could not send you a DM. Please check your privacy settings to allow DMs from server members.', 
-      ephemeral: true 
+      flags: [MessageFlags.Ephemeral] 
     });
   } finally {
     // Always send summary to admin channel, only save to database if free products found
@@ -305,14 +306,14 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
 
 async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) {
   // Defer reply immediately to avoid timeout
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
   
   // Check permissions
   if (!await checkUserPermission(interaction, true)) {
     return;
   }
   
-  await handleBatchScan(interaction, 25, 'Batch', 3); // 3 parallel stores to avoid rate limiting
+  await handleBatchScan(interaction, 25, 'Batch', 10); // 10 parallel stores - we have 1000 proxies now!
 }
 
 async function handleBatchScan(
@@ -332,7 +333,7 @@ async function handleBatchScan(
   if (!attachment.contentType?.includes('text') && !attachment.name.endsWith('.txt')) {
     await interaction.followUp({ 
       content: '❌ Please upload a text file (.txt) with one store URL per line',
-      ephemeral: true
+      flags: [MessageFlags.Ephemeral]
     });
     return;
   }
@@ -351,7 +352,7 @@ async function handleBatchScan(
     if (urls.length === 0) {
       await interaction.followUp({ 
         content: '❌ No URLs found in file. Please provide at least one URL per line.',
-        ephemeral: true
+        flags: [MessageFlags.Ephemeral]
       });
       return;
     }
@@ -359,7 +360,7 @@ async function handleBatchScan(
     if (urls.length > maxUrls) {
       await interaction.followUp({ 
         content: `❌ Too many URLs! Found ${urls.length} URLs but maximum is ${maxUrls}. Please reduce the number of stores in your file.`,
-        ephemeral: true
+        flags: [MessageFlags.Ephemeral]
       });
       return;
     }
@@ -412,7 +413,7 @@ async function handleBatchScan(
       console.error('Error sending DM:', error);
       await interaction.followUp({ 
         content: '❌ Could not send you a DM. Please check your privacy settings to allow DMs from server members.', 
-        ephemeral: true 
+        flags: [MessageFlags.Ephemeral] 
       });
     } finally {
       // Save to database (only stores with free items) and send summary to admin channel (all stores)
@@ -455,7 +456,7 @@ async function handleBatchScan(
     console.error('Error processing file:', error);
     await interaction.followUp({ 
       content: '❌ Failed to read the file. Please make sure it\'s a valid text file with one URL per line.',
-      ephemeral: true
+      flags: [MessageFlags.Ephemeral]
     });
   }
 }

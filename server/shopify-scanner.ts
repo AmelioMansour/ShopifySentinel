@@ -348,30 +348,13 @@ export async function scanMultipleStores(
   resetProxyMode();
   console.log('🔄 Starting new batch scan - proxy mode reset (direct connection)');
   
-  const BATCH_SIZE = batchSize; // Configurable batch size (default 3 to avoid rate limiting)
-  const PROGRESS_UPDATE_INTERVAL = 10; // Update progress every 10 stores
-  const BATCH_DELAY_MS = 2000; // 2 second delay between batches to avoid rate limiting
+  const BATCH_SIZE = batchSize; // Process batchSize stores in parallel (10 with proxies)
+  const BATCH_DELAY_MS = 1000; // 1 second delay between batches (proxies help avoid rate limiting)
   const results: ScanResult[] = [];
   
-  // Process stores in batches
+  // Process stores in batches for maximum throughput
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
     const batch = urls.slice(i, Math.min(i + BATCH_SIZE, urls.length));
-    
-    // Report progress every PROGRESS_UPDATE_INTERVAL stores or on first/last batch
-    const shouldUpdateProgress = i === 0 || 
-                                 i % PROGRESS_UPDATE_INTERVAL === 0 || 
-                                 i + BATCH_SIZE >= urls.length;
-    
-    if (onProgress && shouldUpdateProgress && batch.length > 0) {
-      let storeName = batch[0];
-      try {
-        const normalized = normalizeShopifyUrl(batch[0]);
-        storeName = extractStoreName(normalized);
-      } catch {
-        storeName = batch[0];
-      }
-      await onProgress(i + 1, urls.length, storeName);
-    }
     
     // Scan all stores in this batch in parallel (skip proxy reset to maintain state across batch)
     const batchResults = await Promise.all(
@@ -379,6 +362,19 @@ export async function scanMultipleStores(
     );
     
     results.push(...batchResults);
+    
+    // Report progress after each batch completes
+    if (onProgress && batch.length > 0) {
+      const storesProcessed = results.length;
+      let storeName = batch[0];
+      try {
+        const normalized = normalizeShopifyUrl(batch[0]);
+        storeName = extractStoreName(normalized);
+      } catch {
+        storeName = batch[0];
+      }
+      await onProgress(storesProcessed, urls.length, storeName);
+    }
     
     // Add delay between batches (except after the last batch) to avoid rate limiting
     if (i + BATCH_SIZE < urls.length) {
