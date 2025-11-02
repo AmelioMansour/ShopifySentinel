@@ -145,11 +145,20 @@ async function checkUserPermission(interaction: ChatInputCommandInteraction): Pr
   }
 
   const member = interaction.member;
-  const hasRole = 'roles' in member && member.roles instanceof Map 
-    ? member.roles.has(REQUIRED_ROLE_ID)
-    : 'roles' in member && Array.isArray(member.roles)
-    ? member.roles.includes(REQUIRED_ROLE_ID)
-    : false;
+  
+  // Check if member has the required role
+  // Discord.js guild members have a GuildMemberRoleManager with a cache property
+  let hasRole = false;
+  if ('roles' in member && member.roles && typeof member.roles === 'object') {
+    // GuildMember from guild (has cache)
+    if ('cache' in member.roles && member.roles.cache) {
+      hasRole = member.roles.cache.has(REQUIRED_ROLE_ID);
+    }
+    // APIInteractionGuildMember (array of role IDs)
+    else if (Array.isArray(member.roles)) {
+      hasRole = member.roles.includes(REQUIRED_ROLE_ID);
+    }
+  }
 
   if (!hasRole) {
     await interaction.reply({ 
@@ -191,6 +200,12 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
   if (!result.success || result.zeroPriceProducts.length === 0) {
     const embed = createScanResultEmbed(result);
     await interaction.editReply({ embeds: [embed] });
+    
+    // Send results to admin channel
+    await sendToAdminChannel({ 
+      embeds: [embed],
+      content: `Scan initiated by <@${interaction.user.id}>`
+    });
     return;
   }
 

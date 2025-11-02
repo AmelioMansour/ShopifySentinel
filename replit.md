@@ -6,7 +6,8 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 ## Features
 - `/scan` - Scan a single Shopify store for zero-price products with pagination
 - `/scanbatch` - Scan multiple Shopify stores at once (text file upload, max 25 URLs)
-- `/scansuperbulk` - Scan up to 200 Shopify stores at once (text file upload, max 200 URLs)
+- **Role-Based Permissions** - Commands require specific Discord role (ID: 1434562069893746698)
+- **Admin Channel Logging** - All scan results are sent to admin channel (ID: 1434557891318124798)
 - **Real-Time Progress Bar** - Live updates showing scan progress during batch operations
 - **Headless Shopify Auto-Detection** - Automatically tries `shop.` subdomain for headless stores
 - **Add-to-Cart Links** - Direct links to add products to cart instead of product pages
@@ -44,7 +45,6 @@ A Discord bot that scans Shopify stores to identify products priced at $0.00. Us
 ```
 /scan url:https://store-name.myshopify.com
 /scanbatch file:[upload .txt file with one URL per line, max 25 URLs]
-/scansuperbulk file:[upload .txt file with one URL per line, max 200 URLs]
 ```
 
 **Example batch file format (stores.txt):**
@@ -56,8 +56,12 @@ shop.hatch.co
 
 **When to use each command:**
 - `/scan` - Quick single store check
-- `/scanbatch` - Small batch of 1-25 stores
-- `/scansuperbulk` - Large batch of 26-200 stores
+- `/scanbatch` - Batch scan of 1-25 stores
+
+**Permission Requirements:**
+- Users must have the required Discord role (ID: 1434562069893746698) to use any bot commands
+- Commands can only be used in Discord servers (not DMs)
+- Permission check is performed before any scan operation begins
 
 ### Example Scan Result
 
@@ -79,6 +83,7 @@ The bot returns an interactive summary with dual-level navigation:
 - Each product shows with a green 🟢 **FREE** indicator
 - Bulk add-to-cart button for each store
 - Footer showing store position and product range (e.g., "Store 2/5 • Products 6-10 of 18")
+- Results are automatically sent to the admin channel (ID: 1434557891318124798) with user attribution
 
 ### Headless Shopify Detection
 For stores like hatch.co that use headless Shopify:
@@ -156,7 +161,11 @@ The application is designed to handle missing configuration gracefully:
 - Check that the application is binding to `0.0.0.0:5000` (already configured)
 - Review deployment logs for specific error messages
 
-## Recent Updates (October 31, 2025)
+## Recent Updates (November 2, 2025)
+- ✅ Added role-based permissions - users must have specific role (ID: 1434562069893746698) to use commands
+- ✅ Implemented admin channel logging - all scan results sent to channel (ID: 1434557891318124798)
+- ✅ Removed `/scansuperbulk` command - simplified to just `/scan` and `/scanbatch`
+- ✅ Added graceful error handling for missing bot token during deployment
 - ✅ Implemented headless Shopify auto-detection (shop. subdomain)
 - ✅ Changed to add-to-cart links instead of product page links
 - ✅ Added pagination with Previous/Next buttons
@@ -166,12 +175,9 @@ The application is designed to handle missing configuration gracefully:
 - ✅ Updated `/scanbatch` to accept text file uploads (one URL per line, max 25 URLs)
 - ✅ Added real-time progress bar for batch scans showing current store and percentage complete
 - ✅ Implemented interactive store navigation for batch results with Previous/Next buttons to browse stores
-- ✅ Optimized batch scanning with parallel processing:
-  - `/scanbatch`: 10 stores in parallel (10x faster)
-  - `/scansuperbulk`: 5 stores in parallel (more reliable for large batches)
+- ✅ Optimized batch scanning with 10 parallel stores for better performance
 - ✅ Reduced progress update frequency to minimize Discord API calls and improve reliability
 - ✅ Fixed bulk cart link response message splitting to handle Discord's 2000 character limit
-- ✅ Added `/scansuperbulk` command for scanning up to 200 stores at once
 
 ## Future Enhancements
 - Historical tracking of price changes
