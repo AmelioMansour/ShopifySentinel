@@ -1,4 +1,27 @@
 import { z } from "zod";
+import { pgTable, serial, varchar, integer, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+
+// Database Tables
+export const scanResults = pgTable("scan_results", {
+  id: serial("id").primaryKey(),
+  storeUrl: varchar("store_url", { length: 500 }).notNull(),
+  storeName: varchar("store_name", { length: 255 }).notNull(),
+  freeProductCount: integer("free_product_count").notNull().default(0),
+  totalProductsScanned: integer("total_products_scanned").notNull().default(0),
+  discordUserId: varchar("discord_user_id", { length: 100 }).notNull(),
+  scannedAt: timestamp("scanned_at").notNull().defaultNow(),
+});
+
+// Insert schemas
+export const insertScanResultSchema = createInsertSchema(scanResults).omit({
+  id: true,
+  scannedAt: true,
+});
+
+// Types
+export type ScanResultRecord = typeof scanResults.$inferSelect;
+export type InsertScanResult = z.infer<typeof insertScanResultSchema>;
 
 // Shopify Product Variant Schema
 export const shopifyVariantSchema = z.object({

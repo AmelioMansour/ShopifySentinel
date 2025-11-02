@@ -15,6 +15,7 @@ import {
 import { getUncachableDiscordClient } from './discord-client';
 import { scanShopifyStore, scanMultipleStores } from './shopify-scanner';
 import type { ScanResult, BatchScanResponse, ZeroPriceProduct } from '@shared/schema';
+import { storage } from './storage';
 
 let client: Client | null = null;
 
@@ -185,6 +186,39 @@ async function sendToAdminChannel(content: { embeds?: EmbedBuilder[], content?: 
   }
 }
 
+// Create a summarized table view for admin channel
+function createAdminSummaryMessage(
+  userId: string, 
+  results: Array<{ storeUrl: string; storeName: string; freeProductCount: number; totalProducts: number }>
+): string {
+  // Calculate totals
+  const totalFree = results.reduce((sum, r) => sum + r.freeProductCount, 0);
+  const totalScanned = results.reduce((sum, r) => sum + r.totalProducts, 0);
+  
+  // Build table header
+  let message = `📊 **Scan Summary** - Initiated by <@${userId}>\n\n`;
+  message += '```\n';
+  message += 'Store                                      Free  Total\n';
+  message += '─'.repeat(60) + '\n';
+  
+  // Add each store row
+  for (const result of results) {
+    const storeName = result.storeName.substring(0, 40).padEnd(40);
+    const free = result.freeProductCount.toString().padStart(4);
+    const total = result.totalProducts.toString().padStart(6);
+    message += `${storeName} ${free}  ${total}\n`;
+  }
+  
+  // Add summary footer
+  message += '─'.repeat(60) + '\n';
+  message += `TOTAL${' '.repeat(35)} ${totalFree.toString().padStart(4)}  ${totalScanned.toString().padStart(6)}\n`;
+  message += '```\n';
+  
+  message += `\n✅ **${results.length}** store(s) scanned | **${totalFree}** free products found`;
+  
+  return message;
+}
+
 async function handleScanCommand(interaction: ChatInputCommandInteraction) {
   // Check permissions first
   if (!await checkUserPermission(interaction)) {
@@ -240,12 +274,30 @@ async function handleScanCommand(interaction: ChatInputCommandInteraction) {
       ephemeral: true 
     });
   } finally {
-    // Always send results to admin channel, even if DM failed
-    if (embedToLog) {
-      await sendToAdminChannel({ 
-        embeds: [embedToLog],
-        content: `Scan initiated by <@${interaction.user.id}>`
-      });
+    // Save to database and send summary to admin channel
+    if (result.success) {
+      try {
+        // Save to database
+        await storage.saveScanResult({
+          storeUrl: result.storeUrl,
+          storeName: result.storeName,
+          freeProductCount: result.zeroPriceProducts.length,
+          totalProductsScanned: result.productsFound,
+          discordUserId: interaction.user.id,
+        });
+
+        // Send summarized table view to admin channel
+        const summaryMessage = createAdminSummaryMessage(interaction.user.id, [{
+          storeUrl: result.storeUrl,
+          storeName: result.storeName,
+          freeProductCount: result.zeroPriceProducts.length,
+          totalProducts: result.productsFound,
+        }]);
+
+        await sendToAdminChannel({ content: summaryMessage });
+      } catch (error) {
+        console.error('Error saving to database or sending to admin channel:', error);
+      }
     }
   }
 }
@@ -360,12 +412,38 @@ async function handleBatchScan(
         ephemeral: true 
       });
     } finally {
-      // Always send results to admin channel, even if DM failed
-      if (embedToLog) {
-        await sendToAdminChannel({ 
-          embeds: [embedToLog],
-          content: `Batch scan initiated by <@${interaction.user.id}> - ${urls.length} stores scanned`
-        });
+      // Save all successful scans to database and send summary to admin channel
+      try {
+        const summaryData = [];
+        
+        for (const result of batchResponse.results) {
+          if (result.success) {
+            // Save to database
+            await storage.saveScanResult({
+              storeUrl: result.storeUrl,
+              storeName: result.storeName,
+              freeProductCount: result.zeroPriceProducts.length,
+              totalProductsScanned: result.productsFound,
+              discordUserId: interaction.user.id,
+            });
+
+            // Add to summary
+            summaryData.push({
+              storeUrl: result.storeUrl,
+              storeName: result.storeName,
+              freeProductCount: result.zeroPriceProducts.length,
+              totalProducts: result.productsFound,
+            });
+          }
+        }
+
+        // Send summarized table view to admin channel
+        if (summaryData.length > 0) {
+          const summaryMessage = createAdminSummaryMessage(interaction.user.id, summaryData);
+          await sendToAdminChannel({ content: summaryMessage });
+        }
+      } catch (error) {
+        console.error('Error saving to database or sending to admin channel:', error);
       }
     }
   } catch (error) {
