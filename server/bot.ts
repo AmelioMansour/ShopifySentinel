@@ -59,12 +59,23 @@ export async function startBot() {
         console.error('Error handling interaction:', error);
         const errorMessage = error instanceof Error ? error.message : 'An error occurred';
         
-        if (interaction.isRepliable()) {
-          if (interaction.deferred || interaction.replied) {
-            await interaction.editReply({ content: `❌ Error: ${errorMessage}` });
-          } else {
-            await interaction.reply({ content: `❌ Error: ${errorMessage}`, flags: [MessageFlags.Ephemeral] });
+        // Handle Discord interaction timeout errors gracefully
+        if (error instanceof Error && (error.message.includes('Unknown interaction') || error.message.includes('already been acknowledged'))) {
+          console.warn('⚠️  Discord interaction expired - this is normal for long-running scans');
+          return; // Don't try to reply to expired interactions
+        }
+        
+        try {
+          if (interaction.isRepliable()) {
+            if (interaction.deferred || interaction.replied) {
+              await interaction.editReply({ content: `❌ Error: ${errorMessage}` });
+            } else {
+              await interaction.reply({ content: `❌ Error: ${errorMessage}`, flags: [MessageFlags.Ephemeral] });
+            }
           }
+        } catch (replyError) {
+          console.error('Could not send error reply (interaction may have expired):', replyError);
+          // Swallow this error - interaction is already gone
         }
       }
     });
