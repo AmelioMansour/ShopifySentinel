@@ -313,7 +313,7 @@ async function handleScanBatchCommand(interaction: ChatInputCommandInteraction) 
     return;
   }
   
-  await handleBatchScan(interaction, 25, 'Batch', 10); // 10 parallel stores - we have 1000 proxies now!
+  await handleBatchScan(interaction, 25, 'Batch', 5); // 5 parallel stores - prevents Discord timeout issues
 }
 
 async function handleBatchScan(
