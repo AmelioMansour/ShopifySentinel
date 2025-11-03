@@ -100,10 +100,11 @@ function extractStoreName(url: string): string {
   }
 }
 
-// Helper function to make fetch requests with proxy rotation and retry logic
-async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
+// Helper function to make fetch requests with proxy rotation and comprehensive retry logic
+async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount = 0, proxyRetryCount = 0): Promise<any> {
   const fetchOptions: any = { ...options };
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 3; // Retry with different proxies
+  const CONNECTION_TIMEOUT = 10000; // 10 seconds total timeout
   
   // Always use next proxy from rotation (proxies enabled by default)
   const proxyAgent = getNextProxy();
@@ -111,17 +112,38 @@ async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount
     fetchOptions.agent = proxyAgent;
   }
   
-  const response = await fetch(url, fetchOptions);
+  // Add strict timeout using AbortController
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT);
+  fetchOptions.signal = controller.signal;
   
-  // Retry on 429 rate limit errors with exponential backoff
-  if (response.status === 429 && retryCount < MAX_RETRIES && proxyList.length > 0) {
-    const backoffMs = 1000 * Math.pow(2, retryCount); // 1s, 2s, 4s
-    console.warn(`⚠️  HTTP 429 detected for ${url} - retrying in ${backoffMs}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-    await delay(backoffMs);
-    return fetchWithProxy(url, options, retryCount + 1);
+  try {
+    const response = await fetch(url, fetchOptions);
+    clearTimeout(timeoutId);
+    
+    // Retry on 429 rate limit errors with exponential backoff
+    if (response.status === 429 && retryCount < MAX_RETRIES && proxyList.length > 0) {
+      const backoffMs = 1000 * Math.pow(2, retryCount); // 1s, 2s, 4s
+      console.warn(`⚠️  HTTP 429 detected for ${url} - retrying in ${backoffMs}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+      await delay(backoffMs);
+      return fetchWithProxy(url, options, retryCount + 1, 0);
+    }
+    
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    
+    // Retry network/timeout errors with a different proxy
+    if (proxyRetryCount < MAX_RETRIES && proxyList.length > 0) {
+      const errorMsg = error.message || 'Unknown error';
+      console.warn(`⚠️  Proxy error for ${url}: ${errorMsg} - trying different proxy (${proxyRetryCount + 1}/${MAX_RETRIES})`);
+      await delay(500); // Small delay before trying next proxy
+      return fetchWithProxy(url, options, retryCount, proxyRetryCount + 1);
+    }
+    
+    // All retries exhausted, throw error
+    throw error;
   }
-  
-  return response;
 }
 
 async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null> {
