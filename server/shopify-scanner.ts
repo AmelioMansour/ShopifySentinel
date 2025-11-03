@@ -310,11 +310,26 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
       scannedAt,
     };
   } catch (error) {
+    let errorMessage = 'Unknown error occurred';
+    
+    if (error instanceof Error) {
+      // Categorize errors for better user feedback
+      if (error.message.includes('aborted') || error.message.includes('timeout')) {
+        errorMessage = 'Connection timeout - proxy may be slow or store is unreachable';
+      } else if (error.message.includes('network socket disconnected') || error.message.includes('ECONNREFUSED')) {
+        errorMessage = 'Network connection failed - store may be blocking proxy IPs';
+      } else if (error.message.includes('fetch failed')) {
+        errorMessage = 'Request failed - proxy connection issue or invalid store URL';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    
     return {
       storeUrl: normalizedUrl,
       storeName,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: errorMessage,
       productsFound: 0,
       zeroPriceProducts: [],
       scannedAt,
