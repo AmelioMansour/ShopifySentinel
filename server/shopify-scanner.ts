@@ -5,24 +5,29 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Proxy configuration and state
-let proxyEnabled = true; // Always use proxies by default (we have 1000!)
+let proxyEnabled = false; // Disabled by default - proxies are too slow and unreliable
 let proxyList: string[] = [];
 let currentProxyIndex = 0;
 
 // Load proxy list from file on startup
 function loadProxyList(): void {
   try {
-    // Try multiple possible paths for the IPRoyal proxy file
+    // Try PyProxy first (faster), then fall back to IPRoyal
     const possiblePaths = [
-      path.join(process.cwd(), 'server', 'proxies-iproyal.txt'),
-      'server/proxies-iproyal.txt',
-      './server/proxies-iproyal.txt',
+      { path: path.join(process.cwd(), 'server', 'proxies.txt'), type: 'PyProxy' },
+      { path: 'server/proxies.txt', type: 'PyProxy' },
+      { path: './server/proxies.txt', type: 'PyProxy' },
+      { path: path.join(process.cwd(), 'server', 'proxies-iproyal.txt'), type: 'IPRoyal' },
+      { path: 'server/proxies-iproyal.txt', type: 'IPRoyal' },
+      { path: './server/proxies-iproyal.txt', type: 'IPRoyal' },
     ];
     
     let proxyFilePath = '';
-    for (const testPath of possiblePaths) {
-      if (fs.existsSync(testPath)) {
-        proxyFilePath = testPath;
+    let proxyType = '';
+    for (const test of possiblePaths) {
+      if (fs.existsSync(test.path)) {
+        proxyFilePath = test.path;
+        proxyType = test.type;
         break;
       }
     }
@@ -33,10 +38,10 @@ function loadProxyList(): void {
         .split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
-      console.log(`✅ Loaded ${proxyList.length} IPRoyal proxies from ${proxyFilePath}`);
+      console.log(`✅ Loaded ${proxyList.length} ${proxyType} proxies from ${proxyFilePath}`);
     } else {
-      console.warn('⚠️  No proxy file found. Tried paths:', possiblePaths);
-      console.warn('⚠️  Bot will work without proxies until 429 errors occur');
+      console.warn('⚠️  No proxy file found. Tried paths:', possiblePaths.map(p => p.path));
+      console.warn('⚠️  Bot will work without proxies');
     }
   } catch (error) {
     console.error('❌ Failed to load proxy list:', error);
@@ -103,8 +108,8 @@ function extractStoreName(url: string): string {
 // Helper function to make fetch requests with proxy rotation and comprehensive retry logic
 async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount = 0, proxyRetryCount = 0): Promise<any> {
   const fetchOptions: any = { ...options };
-  const MAX_RETRIES = 2; // Retry with different proxies (reduced from 3 to fail faster)
-  const CONNECTION_TIMEOUT = 15000; // 15 seconds timeout (reduced from 30s)
+  const MAX_RETRIES = 1; // Only retry once (failing fast)
+  const CONNECTION_TIMEOUT = 8000; // 8 seconds timeout
   
   const requestStart = Date.now();
   
@@ -258,8 +263,9 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
     let allProducts: ShopifyProduct[] = [];
     let page = 1;
     let hasMore = true;
+    const MAX_PAGES = 20; // Limit to 5000 products max (20 pages × 250)
     
-    while (hasMore) {
+    while (hasMore && page <= MAX_PAGES) {
       const paginatedUrl = `${actualUrl}/products.json?limit=250&page=${page}`;
       const pageResponse = await fetchWithProxy(paginatedUrl);
       
@@ -279,11 +285,13 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
         // If we got less than 250 products, this is the last page
         if (products.length < 250) {
           hasMore = false;
-        } else {
-          // Add delay between pagination requests to avoid rate limiting
-          await delay(500);
         }
+        // Removed 500ms delay - too slow for large stores
       }
+    }
+    
+    if (page > MAX_PAGES) {
+      console.log(`⚠️  Store has 5000+ products, stopped at page ${MAX_PAGES} for ${storeName}`);
     }
 
     const zeroPriceProducts = [];
