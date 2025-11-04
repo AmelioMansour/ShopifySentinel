@@ -369,70 +369,58 @@ async function delay(ms: number): Promise<void> {
 export async function scanMultipleStores(
   urls: string[], 
   onProgress?: (current: number, total: number, storeName: string) => Promise<void>,
-  batchSize: number = 3
+  concurrentLimit: number = 10
 ): Promise<BatchScanResponse> {
   const totalStart = Date.now();
-  console.log(`🔄 Starting batch scan of ${urls.length} stores using ${proxyList.length} rotating proxies`);
+  console.log(`🔄 Starting rolling queue scan of ${urls.length} stores with ${concurrentLimit} concurrent workers`);
   
-  const BATCH_SIZE = batchSize; // Process batchSize stores in parallel (10 with proxies)
-  const BATCH_DELAY_MS = 1000; // 1 second delay between batches (proxies help avoid rate limiting)
-  const results: ScanResult[] = [];
+  const results: ScanResult[] = new Array(urls.length); // Pre-allocate array
+  const queue = [...urls]; // Copy array to use as queue
+  let completed = 0;
+  let lastProgressUpdate = 0;
   
-  // Process stores in batches for maximum throughput
-  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-    const batch = urls.slice(i, Math.min(i + BATCH_SIZE, urls.length));
-    const batchStart = Date.now();
-    
-    console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} stores in parallel`);
-    
-    // Scan all stores in this batch in parallel - use allSettled so slow stores don't block others
-    const batchPromises = await Promise.allSettled(
-      batch.map(url => scanShopifyStore(url, true))
-    );
-    
-    // Extract results from settled promises
-    const batchResults = batchPromises.map((result, index) => {
-      if (result.status === 'fulfilled') {
-        return result.value;
-      } else {
-        // If promise rejected, create a failed scan result
-        console.error(`❌ Unexpected error scanning ${batch[index]}:`, result.reason);
-        return {
-          storeUrl: batch[index],
-          storeName: 'Error',
-          success: false,
-          error: result.reason?.message || 'Unexpected scan error',
-          productsFound: 0,
-          zeroPriceProducts: [],
-          scannedAt: new Date().toISOString(),
-        };
+  // Worker function - each worker continuously pulls from queue until empty
+  const worker = async (workerId: number) => {
+    while (queue.length > 0) {
+      const url = queue.shift(); // Get next URL from queue
+      if (!url) break;
+      
+      const storeIndex = urls.indexOf(url);
+      const storeNum = completed + 1;
+      console.log(`🔄 Worker #${workerId} starting store ${storeNum}/${urls.length}: ${url}`);
+      
+      const storeStart = Date.now();
+      const result = await scanShopifyStore(url, true);
+      const storeTime = Date.now() - storeStart;
+      
+      results[storeIndex] = result; // Store in correct position to maintain order
+      completed++;
+      
+      console.log(`✅ Worker #${workerId} completed store ${completed}/${urls.length} in ${storeTime}ms: ${result.storeName} (${result.zeroPriceProducts.length} free products) - ${queue.length} remaining`);
+      
+      // Report progress after each store completes (throttle to max 1 per second)
+      const now = Date.now();
+      if (onProgress && (now - lastProgressUpdate >= 1000 || completed === urls.length)) {
+        lastProgressUpdate = now;
+        let storeName = url;
+        try {
+          const normalized = normalizeShopifyUrl(url);
+          storeName = extractStoreName(normalized);
+        } catch {
+          storeName = url;
+        }
+        await onProgress(completed, urls.length, storeName);
       }
-    });
-    
-    const batchTime = Date.now() - batchStart;
-    console.log(`📦 Batch completed in ${batchTime}ms (${(batchTime / 1000).toFixed(1)}s)`);
-    
-    results.push(...batchResults);
-    
-    // Report progress after each batch completes
-    if (onProgress && batch.length > 0) {
-      const storesProcessed = results.length;
-      let storeName = batch[0];
-      try {
-        const normalized = normalizeShopifyUrl(batch[0]);
-        storeName = extractStoreName(normalized);
-      } catch {
-        storeName = batch[0];
-      }
-      await onProgress(storesProcessed, urls.length, storeName);
     }
     
-    // Add delay between batches (except after the last batch) to avoid rate limiting
-    if (i + BATCH_SIZE < urls.length) {
-      await delay(BATCH_DELAY_MS);
-    }
-  }
-
+    console.log(`🏁 Worker #${workerId} finished - no more stores in queue`);
+  };
+  
+  // Start N workers in parallel - they'll race to pull from the queue
+  console.log(`🚀 Launching ${concurrentLimit} concurrent workers...`);
+  const workers = Array(concurrentLimit).fill(null).map((_, i) => worker(i + 1));
+  await Promise.all(workers);
+  
   const successfulScans = results.filter(r => r.success).length;
   const failedScans = results.filter(r => !r.success).length;
   const totalZeroPriceProducts = results.reduce(
@@ -441,7 +429,8 @@ export async function scanMultipleStores(
   );
 
   const totalTime = Date.now() - totalStart;
-  console.log(`🏁 Batch scan complete: ${totalTime}ms (${(totalTime / 1000).toFixed(1)}s) | ${successfulScans} success, ${failedScans} failed | ${totalZeroPriceProducts} free products found`);
+  const avgTimePerStore = totalTime / urls.length;
+  console.log(`🏁 Rolling queue scan complete: ${totalTime}ms (${(totalTime / 1000).toFixed(1)}s) | Avg ${avgTimePerStore.toFixed(0)}ms/store | ${successfulScans} success, ${failedScans} failed | ${totalZeroPriceProducts} free products found`);
 
   return {
     results,
