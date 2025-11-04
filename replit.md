@@ -20,7 +20,7 @@ I prefer detailed explanations and clear communication. I want the agent to use 
 - **Add-to-Cart Links:** Generates direct add-to-cart URLs in the format `https://[store-domain]/cart/[variantId]:1`.
 - **Bulk Add-to-Cart:** Supports adding multiple products to the cart via a single URL, with automatic URL splitting to bypass length limits.
 - **Headless Shopify Detection:** Automatically attempts `shop.` subdomain if the primary domain scan fails.
-- **Rate Limiting & Performance:** Implements delays (1-second between batches, 500ms between pagination requests) and processes 5 stores in parallel with 1000 PyProxy proxies. Each request has a 10-second timeout and automatically retries with up to 3 different proxies on failure. Progress updates sent after each batch completes to avoid Discord rate limits while providing regular feedback.
+- **Rate Limiting & Performance:** Implements delays (1-second between batches, 500ms between pagination requests) and processes 5 stores in parallel with 1000 IPRoyal proxies. Each request has a 10-second timeout and automatically retries with up to 3 different proxies on failure. Progress updates sent after each batch completes to avoid Discord rate limits while providing regular feedback.
 - **Discord Interaction Handling:** Uses deferred replies to handle long-running scan operations, extending the response window beyond the default 3 seconds.
 - **Error Handling:** Comprehensive error handling for invalid URLs, network issues, non-Shopify sites, and API failures.
 - **Role-Based Permissions:** Commands require a specific Discord role (ID: 1434562069893746698).
@@ -30,7 +30,7 @@ I prefer detailed explanations and clear communication. I want the agent to use 
 - **Backend:** Node.js with TypeScript, Express for server, and Discord.js for bot interactions.
 - **Database:** PostgreSQL with Drizzle ORM for storing scan results. The `scan_results` table stores unique store URLs, free product counts, and scan metadata, with an upsert mechanism to update existing records. Only scans finding free products are saved.
 - **Modular Design:** Separation of concerns with dedicated modules for Discord interactions (`bot.ts`, `discord-client.ts`), Shopify scanning logic (`shopify-scanner.ts`), and database operations (`storage.ts`, `db.ts`).
-- **Proxy System:** The bot uses rotating PyProxy residential proxies by default for all requests (1000 proxies loaded from `server/proxies.txt`). Includes automatic retry with exponential backoff (1s, 2s, 4s) on 429 rate limit errors.
+- **Proxy System:** The bot uses rotating IPRoyal residential proxies by default for all requests (1000 proxies loaded from `server/proxies-iproyal.txt`). Includes automatic retry with up to 3 different proxies per request on network/timeout failures. PyProxy backup proxies available in `server/proxies.txt`.
 
 ## External Dependencies
 - **Discord API:** Used for bot interactions, command registration, message sending, and user authentication via Replit's Discord connector.

@@ -12,11 +12,11 @@ let currentProxyIndex = 0;
 // Load proxy list from file on startup
 function loadProxyList(): void {
   try {
-    // Try multiple possible paths for the proxy file
+    // Try multiple possible paths for the IPRoyal proxy file
     const possiblePaths = [
-      path.join(process.cwd(), 'server', 'proxies.txt'),
-      'server/proxies.txt',
-      './server/proxies.txt',
+      path.join(process.cwd(), 'server', 'proxies-iproyal.txt'),
+      'server/proxies-iproyal.txt',
+      './server/proxies-iproyal.txt',
     ];
     
     let proxyFilePath = '';
@@ -33,7 +33,7 @@ function loadProxyList(): void {
         .split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
-      console.log(`✅ Loaded ${proxyList.length} PyProxy proxies from ${proxyFilePath}`);
+      console.log(`✅ Loaded ${proxyList.length} IPRoyal proxies from ${proxyFilePath}`);
     } else {
       console.warn('⚠️  No proxy file found. Tried paths:', possiblePaths);
       console.warn('⚠️  Bot will work without proxies until 429 errors occur');
