@@ -259,39 +259,66 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
       };
     }
 
-    // Fetch all products using pagination (Shopify limits to 250 per page)
-    let allProducts: ShopifyProduct[] = [];
-    let page = 1;
-    let hasMore = true;
+    // Fetch all products using PARALLEL pagination for maximum speed
     const MAX_PAGES = 20; // Limit to 5000 products max (20 pages × 250)
     
-    while (hasMore && page <= MAX_PAGES) {
-      const paginatedUrl = `${actualUrl}/products.json?limit=250&page=${page}`;
-      const pageResponse = await fetchWithProxy(paginatedUrl);
-      
-      if (!pageResponse.ok) {
-        break;
-      }
-      
-      const data = await pageResponse.json();
-      const products: ShopifyProduct[] = data.products || [];
-      
-      if (products.length === 0) {
-        hasMore = false;
-      } else {
-        allProducts = allProducts.concat(products);
-        page++;
-        
-        // If we got less than 250 products, this is the last page
-        if (products.length < 250) {
-          hasMore = false;
-        }
-        // Removed 500ms delay - too slow for large stores
-      }
+    // Step 1: Fetch page 1 to see if there are more pages
+    const firstPageUrl = `${actualUrl}/products.json?limit=250&page=1`;
+    const firstPageResponse = await fetchWithProxy(firstPageUrl);
+    
+    if (!firstPageResponse.ok) {
+      throw new Error(`Failed to fetch products: ${firstPageResponse.statusText}`);
     }
     
-    if (page > MAX_PAGES) {
-      console.log(`⚠️  Store has 5000+ products, stopped at page ${MAX_PAGES} for ${storeName}`);
+    const firstPageData = await firstPageResponse.json();
+    let allProducts: ShopifyProduct[] = firstPageData.products || [];
+    
+    // Step 2: If page 1 has 250 products, fetch remaining pages in PARALLEL
+    if (allProducts.length === 250) {
+      console.log(`📄 Page 1 has 250 products - fetching pages 2-${MAX_PAGES} in parallel for ${storeName}`);
+      const parallelStart = Date.now();
+      
+      // Create array of page numbers [2, 3, 4, ..., MAX_PAGES]
+      const remainingPages = Array.from({ length: MAX_PAGES - 1 }, (_, i) => i + 2);
+      
+      // Fetch all remaining pages in parallel
+      const pagePromises = remainingPages.map(async (pageNum) => {
+        try {
+          const pageUrl = `${actualUrl}/products.json?limit=250&page=${pageNum}`;
+          const pageResponse = await fetchWithProxy(pageUrl);
+          
+          if (!pageResponse.ok) {
+            return [];
+          }
+          
+          const data = await pageResponse.json();
+          return data.products || [];
+        } catch (error: any) {
+          console.log(`⚠️  Failed to fetch page ${pageNum} for ${storeName}: ${error?.message || error}`);
+          return [];
+        }
+      });
+      
+      // Wait for ALL pages to complete
+      const pageResults = await Promise.all(pagePromises);
+      
+      // Combine all products, stopping when we hit an empty page
+      for (const products of pageResults) {
+        if (products.length === 0) {
+          break; // Stop at first empty page
+        }
+        allProducts = allProducts.concat(products);
+        
+        // If we got less than 250, this was the last page
+        if (products.length < 250) {
+          break;
+        }
+      }
+      
+      const parallelTime = Date.now() - parallelStart;
+      console.log(`⚡ Parallel pagination completed in ${parallelTime}ms for ${storeName} - fetched ${allProducts.length} products`);
+    } else {
+      console.log(`📄 Page 1 has ${allProducts.length} products - no additional pages needed for ${storeName}`);
     }
 
     const zeroPriceProducts = [];
