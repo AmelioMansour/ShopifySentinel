@@ -104,7 +104,7 @@ function extractStoreName(url: string): string {
 async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount = 0, proxyRetryCount = 0): Promise<any> {
   const fetchOptions: any = { ...options };
   const MAX_RETRIES = 3; // Retry with different proxies
-  const CONNECTION_TIMEOUT = 10000; // 10 seconds total timeout
+  const CONNECTION_TIMEOUT = 30000; // 30 seconds timeout for residential proxies
   
   // Always use next proxy from rotation (proxies enabled by default)
   const proxyAgent = getNextProxy();
