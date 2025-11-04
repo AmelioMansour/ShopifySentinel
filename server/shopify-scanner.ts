@@ -103,8 +103,8 @@ function extractStoreName(url: string): string {
 // Helper function to make fetch requests with proxy rotation and comprehensive retry logic
 async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount = 0, proxyRetryCount = 0): Promise<any> {
   const fetchOptions: any = { ...options };
-  const MAX_RETRIES = 3; // Retry with different proxies
-  const CONNECTION_TIMEOUT = 30000; // 30 seconds timeout for residential proxies
+  const MAX_RETRIES = 2; // Retry with different proxies (reduced from 3 to fail faster)
+  const CONNECTION_TIMEOUT = 15000; // 15 seconds timeout (reduced from 30s)
   
   const requestStart = Date.now();
   
@@ -377,10 +377,29 @@ export async function scanMultipleStores(
     
     console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} stores in parallel`);
     
-    // Scan all stores in this batch in parallel (skip proxy reset to maintain state across batch)
-    const batchResults = await Promise.all(
+    // Scan all stores in this batch in parallel - use allSettled so slow stores don't block others
+    const batchPromises = await Promise.allSettled(
       batch.map(url => scanShopifyStore(url, true))
     );
+    
+    // Extract results from settled promises
+    const batchResults = batchPromises.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        // If promise rejected, create a failed scan result
+        console.error(`❌ Unexpected error scanning ${batch[index]}:`, result.reason);
+        return {
+          storeUrl: batch[index],
+          storeName: 'Error',
+          success: false,
+          error: result.reason?.message || 'Unexpected scan error',
+          productsFound: 0,
+          zeroPriceProducts: [],
+          scannedAt: new Date().toISOString(),
+        };
+      }
+    });
     
     const batchTime = Date.now() - batchStart;
     console.log(`📦 Batch completed in ${batchTime}ms (${(batchTime / 1000).toFixed(1)}s)`);

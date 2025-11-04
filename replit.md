@@ -20,7 +20,7 @@ I prefer detailed explanations and clear communication. I want the agent to use 
 - **Add-to-Cart Links:** Generates direct add-to-cart URLs in the format `https://[store-domain]/cart/[variantId]:1`.
 - **Bulk Add-to-Cart:** Supports adding multiple products to the cart via a single URL, with automatic URL splitting to bypass length limits.
 - **Headless Shopify Detection:** Automatically attempts `shop.` subdomain if the primary domain scan fails.
-- **Rate Limiting & Performance:** Implements delays (1-second between batches, 500ms between pagination requests) and processes 10 stores in parallel with rotating IPRoyal proxies. Each request has a 30-second timeout (for residential proxy latency) and automatically retries with up to 3 different proxies on failure. Progress updates sent after each batch completes to avoid Discord rate limits while providing regular feedback.
+- **Rate Limiting & Performance:** Implements delays (1-second between batches, 500ms between pagination requests) and processes 10 stores in parallel with rotating IPRoyal proxies. Each request has a 15-second timeout and automatically retries with up to 2 different proxies on failure. Uses Promise.allSettled to ensure slow stores don't block fast ones. Progress updates sent after each batch completes to avoid Discord rate limits while providing regular feedback.
 - **Discord Interaction Handling:** Uses deferred replies to handle long-running scan operations, extending the response window beyond the default 3 seconds.
 - **Error Handling:** Comprehensive error handling for invalid URLs, network issues, non-Shopify sites, and API failures.
 - **Role-Based Permissions:** Commands require a specific Discord role (ID: 1434562069893746698).
