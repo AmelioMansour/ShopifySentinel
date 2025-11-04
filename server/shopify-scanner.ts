@@ -106,6 +106,8 @@ async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount
   const MAX_RETRIES = 3; // Retry with different proxies
   const CONNECTION_TIMEOUT = 30000; // 30 seconds timeout for residential proxies
   
+  const requestStart = Date.now();
+  
   // Always use next proxy from rotation (proxies enabled by default)
   const proxyAgent = getNextProxy();
   if (proxyAgent) {
@@ -121,6 +123,9 @@ async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount
     const response = await fetch(url, fetchOptions);
     clearTimeout(timeoutId);
     
+    const requestTime = Date.now() - requestStart;
+    console.log(`⏱️  Request completed in ${requestTime}ms: ${url.substring(0, 60)}...`);
+    
     // Retry on 429 rate limit errors with exponential backoff
     if (response.status === 429 && retryCount < MAX_RETRIES && proxyList.length > 0) {
       const backoffMs = 1000 * Math.pow(2, retryCount); // 1s, 2s, 4s
@@ -133,15 +138,18 @@ async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount
   } catch (error: any) {
     clearTimeout(timeoutId);
     
+    const requestTime = Date.now() - requestStart;
+    
     // Retry network/timeout errors with a different proxy
     if (proxyRetryCount < MAX_RETRIES && proxyList.length > 0) {
       const errorMsg = error.message || 'Unknown error';
-      console.warn(`⚠️  Proxy error for ${url}: ${errorMsg} - trying different proxy (${proxyRetryCount + 1}/${MAX_RETRIES})`);
+      console.warn(`⚠️  Proxy error after ${requestTime}ms for ${url}: ${errorMsg} - trying different proxy (${proxyRetryCount + 1}/${MAX_RETRIES})`);
       await delay(500); // Small delay before trying next proxy
       return fetchWithProxy(url, options, retryCount, proxyRetryCount + 1);
     }
     
     // All retries exhausted, throw error
+    console.error(`❌ Request failed after ${requestTime}ms and ${proxyRetryCount + 1} retries: ${url}`);
     throw error;
   }
 }
@@ -176,9 +184,12 @@ async function tryHeadlessShopifyUrl(originalUrl: string): Promise<string | null
 }
 
 export async function scanShopifyStore(url: string, skipProxyReset = false): Promise<ScanResult> {
+  const scanStart = Date.now();
   const scannedAt = new Date().toISOString();
   let normalizedUrl: string;
   let storeName: string;
+  
+  console.log(`🔍 Starting scan for: ${url}`);
   
   try {
     normalizedUrl = normalizeShopifyUrl(url);
@@ -301,6 +312,9 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
       }
     }
 
+    const scanTime = Date.now() - scanStart;
+    console.log(`✅ Scan completed in ${scanTime}ms for ${storeName}: ${allProducts.length} products, ${zeroPriceProducts.length} free`);
+    
     return {
       storeUrl: actualUrl,
       storeName,
@@ -310,6 +324,7 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
       scannedAt,
     };
   } catch (error) {
+    const scanTime = Date.now() - scanStart;
     let errorMessage = 'Unknown error occurred';
     
     if (error instanceof Error) {
@@ -324,6 +339,8 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
         errorMessage = error.message;
       }
     }
+    
+    console.log(`❌ Scan failed after ${scanTime}ms for ${storeName}: ${errorMessage}`);
     
     return {
       storeUrl: normalizedUrl,
@@ -346,6 +363,7 @@ export async function scanMultipleStores(
   onProgress?: (current: number, total: number, storeName: string) => Promise<void>,
   batchSize: number = 3
 ): Promise<BatchScanResponse> {
+  const totalStart = Date.now();
   console.log(`🔄 Starting batch scan of ${urls.length} stores using ${proxyList.length} rotating proxies`);
   
   const BATCH_SIZE = batchSize; // Process batchSize stores in parallel (10 with proxies)
@@ -355,11 +373,17 @@ export async function scanMultipleStores(
   // Process stores in batches for maximum throughput
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
     const batch = urls.slice(i, Math.min(i + BATCH_SIZE, urls.length));
+    const batchStart = Date.now();
+    
+    console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} stores in parallel`);
     
     // Scan all stores in this batch in parallel (skip proxy reset to maintain state across batch)
     const batchResults = await Promise.all(
       batch.map(url => scanShopifyStore(url, true))
     );
+    
+    const batchTime = Date.now() - batchStart;
+    console.log(`📦 Batch completed in ${batchTime}ms (${(batchTime / 1000).toFixed(1)}s)`);
     
     results.push(...batchResults);
     
@@ -388,6 +412,9 @@ export async function scanMultipleStores(
     (sum, r) => sum + r.zeroPriceProducts.length,
     0
   );
+
+  const totalTime = Date.now() - totalStart;
+  console.log(`🏁 Batch scan complete: ${totalTime}ms (${(totalTime / 1000).toFixed(1)}s) | ${successfulScans} success, ${failedScans} failed | ${totalZeroPriceProducts} free products found`);
 
   return {
     results,
