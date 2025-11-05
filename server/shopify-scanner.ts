@@ -53,6 +53,11 @@ loadProxyList();
 
 // Get next proxy from rotation
 function getNextProxy(): HttpsProxyAgent<string> | null {
+  // If proxies are disabled, return null immediately
+  if (!proxyEnabled) {
+    return null;
+  }
+  
   if (proxyList.length === 0) {
     return null;
   }
@@ -113,7 +118,7 @@ async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount
   
   const requestStart = Date.now();
   
-  // Always use next proxy from rotation (proxies enabled by default)
+  // Use proxy if enabled
   const proxyAgent = getNextProxy();
   if (proxyAgent) {
     fetchOptions.agent = proxyAgent;
@@ -145,11 +150,15 @@ async function fetchWithProxy(url: string, options: RequestInit = {}, retryCount
     
     const requestTime = Date.now() - requestStart;
     
-    // Retry network/timeout errors with a different proxy
-    if (proxyRetryCount < MAX_RETRIES && proxyList.length > 0) {
+    // Retry network/timeout errors (with different proxy if enabled)
+    if (proxyRetryCount < MAX_RETRIES) {
       const errorMsg = error.message || 'Unknown error';
-      console.warn(`⚠️  Proxy error after ${requestTime}ms for ${url}: ${errorMsg} - trying different proxy (${proxyRetryCount + 1}/${MAX_RETRIES})`);
-      await delay(500); // Small delay before trying next proxy
+      if (proxyEnabled && proxyList.length > 0) {
+        console.warn(`⚠️  Request failed after ${requestTime}ms for ${url}: ${errorMsg} - trying different proxy (${proxyRetryCount + 1}/${MAX_RETRIES})`);
+      } else {
+        console.warn(`⚠️  Request failed after ${requestTime}ms for ${url}: ${errorMsg} - retrying (${proxyRetryCount + 1}/${MAX_RETRIES})`);
+      }
+      await delay(500); // Small delay before retry
       return fetchWithProxy(url, options, retryCount, proxyRetryCount + 1);
     }
     
@@ -365,11 +374,17 @@ export async function scanShopifyStore(url: string, skipProxyReset = false): Pro
     if (error instanceof Error) {
       // Categorize errors for better user feedback
       if (error.message.includes('aborted') || error.message.includes('timeout')) {
-        errorMessage = 'Connection timeout - proxy may be slow or store is unreachable';
-      } else if (error.message.includes('network socket disconnected') || error.message.includes('ECONNREFUSED')) {
-        errorMessage = 'Network connection failed - store may be blocking proxy IPs';
+        errorMessage = proxyEnabled 
+          ? 'Connection timeout - proxy may be slow or store is unreachable'
+          : 'Connection timeout - store may be unreachable or not a Shopify store';
+      } else if (error.message.includes('network socket disconnected') || error.message.includes('ECONNREFUSED') || error.message.includes('EPROTO')) {
+        errorMessage = proxyEnabled
+          ? 'Network connection failed - store may be blocking proxy IPs'
+          : 'Network connection failed - store may not be a Shopify store';
       } else if (error.message.includes('fetch failed')) {
-        errorMessage = 'Request failed - proxy connection issue or invalid store URL';
+        errorMessage = proxyEnabled
+          ? 'Request failed - proxy connection issue or invalid store URL'
+          : 'Request failed - store may not be a Shopify store or invalid URL';
       } else {
         errorMessage = error.message;
       }
