@@ -21,15 +21,16 @@ I prefer detailed explanations and clear communication. I want the agent to use 
 - **Bulk Add-to-Cart:** Supports adding multiple products to the cart via a single URL, with automatic URL splitting to bypass length limits.
 - **Headless Shopify Detection:** Automatically attempts `shop.` subdomain if the primary domain scan fails.
 - **Rate Limiting & Performance:** Uses a rolling concurrent queue with 10 workers - when any store finishes, the next one immediately starts (no batch waiting). Direct connections (proxies disabled for speed). Each request has an 8-second timeout with 1 retry on failure. Limits scanning to 5000 products per store (20 pages) to prevent massive stores from blocking progress. **Parallel pagination** - fetches all 20 pages simultaneously instead of sequentially, reducing large store scan times from 40s to 2-4s. Progress updates throttled to max 1 per second to avoid Discord rate limits.
+- **Background Scanning:** New system for scanning massive store lists (600k+ stores). Reads store URLs from `server/stores.txt` and processes them in the background. Triggered manually via `/startscan` command. Sends progress updates to admin channel every 1000 stores. Tracks all stats in `background_scans` database table.
 - **Discord Interaction Handling:** Uses deferred replies to handle long-running scan operations, extending the response window beyond the default 3 seconds.
-- **Error Handling:** Comprehensive error handling for invalid URLs, network issues, non-Shopify sites, and API failures.
+- **Error Handling:** Comprehensive error handling for invalid URLs, network issues, non-Shopify sites, and API failures. Error messages now accurately reflect whether proxies are enabled or disabled.
 - **Role-Based Permissions:** Commands require a specific Discord role (ID: 1434562069893746698).
 - **Admin Channel Logging:** All scan results are summarized and sent to a designated admin channel (ID: 1434557891318124798).
 
 ### System Design Choices
 - **Backend:** Node.js with TypeScript, Express for server, and Discord.js for bot interactions.
-- **Database:** PostgreSQL with Drizzle ORM for storing scan results. The `scan_results` table stores unique store URLs, free product counts, and scan metadata, with an upsert mechanism to update existing records. Only scans finding free products are saved.
-- **Modular Design:** Separation of concerns with dedicated modules for Discord interactions (`bot.ts`, `discord-client.ts`), Shopify scanning logic (`shopify-scanner.ts`), and database operations (`storage.ts`, `db.ts`).
+- **Database:** PostgreSQL with Drizzle ORM for storing scan results. The `scan_results` table stores unique store URLs, free product counts, and scan metadata, with an upsert mechanism to update existing records. Only scans finding free products are saved. The `background_scans` table tracks long-running background scan jobs with progress stats.
+- **Modular Design:** Separation of concerns with dedicated modules for Discord interactions (`bot.ts`, `discord-client.ts`), Shopify scanning logic (`shopify-scanner.ts`), background scanning (`background-scanner.ts`), and database operations (`storage.ts`, `db.ts`).
 - **Proxy System:** Proxies are disabled by default for maximum speed and reliability. PyProxy proxies available in `server/proxies.txt` and IPRoyal in `server/proxies-iproyal.txt` if rate limiting becomes an issue. Can be re-enabled by setting `proxyEnabled = true` in shopify-scanner.ts.
 
 ## External Dependencies

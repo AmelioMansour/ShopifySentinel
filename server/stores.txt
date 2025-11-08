@@ -1,0 +1,8 @@
+# Sample stores list for testing background scanner
+# Add one store URL per line
+# Lines starting with # are ignored
+
+# Test with a few stores first
+allbirds.com
+gymshark.com
+fashionnova.com

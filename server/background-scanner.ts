@@ -1,13 +1,14 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { storage } from './storage';
-import { scanMultipleStores } from './shopify-scanner';
+import { scanShopifyStore } from './shopify-scanner';
 import type { Client, TextChannel } from 'discord.js';
 import { EmbedBuilder } from 'discord.js';
 
 const ADMIN_CHANNEL_ID = '1434557891318124798';
 const PROGRESS_UPDATE_INTERVAL = 1000; // Send update every 1000 stores
 const STORES_FILE_PATH = path.join(process.cwd(), 'server', 'stores.txt');
+const CONCURRENT_WORKERS = 10;
 
 interface BackgroundScanState {
   isRunning: boolean;
@@ -100,26 +101,9 @@ export async function startBackgroundScan(discordClient: Client, startedBy: stri
 
   console.log(`🚀 Background scan started: ${storeUrls.length} stores to scan`);
 
-  // Send initial notification to admin channel
-  const adminChannel = await discordClient.channels.fetch(ADMIN_CHANNEL_ID) as TextChannel;
-  if (adminChannel) {
-    const embed = new EmbedBuilder()
-      .setColor(0x00FF00)
-      .setTitle('🚀 Background Scan Started')
-      .setDescription(`Scanning ${storeUrls.length.toLocaleString()} stores from stores.txt`)
-      .addFields(
-        { name: 'Started By', value: startedBy, inline: true },
-        { name: 'Total Stores', value: storeUrls.length.toLocaleString(), inline: true },
-        { name: 'Status', value: 'Running...', inline: true }
-      )
-      .setTimestamp();
-
-    await adminChannel.send({ embeds: [embed] });
-  }
-
-  // Start the scan asynchronously (don't await)
+  // Start the scan asynchronously (don't await) - this will handle its own cleanup
   runBackgroundScan(storeUrls, discordClient, backgroundScan.id).catch(error => {
-    console.error('Background scan error:', error);
+    console.error('Background scan fatal error:', error);
   });
 
   return {
@@ -130,135 +114,207 @@ export async function startBackgroundScan(discordClient: Client, startedBy: stri
 }
 
 async function runBackgroundScan(storeUrls: string[], discordClient: Client, scanId: number) {
-  const adminChannel = await discordClient.channels.fetch(ADMIN_CHANNEL_ID) as TextChannel;
+  let adminChannel: TextChannel | null = null;
   let lastProgressUpdate = 0;
 
   try {
-    // Define progress callback
-    const onProgress = async (current: number, total: number, storeName: string) => {
-      currentScan.scannedStores = current;
-
-      // Send progress update every PROGRESS_UPDATE_INTERVAL stores
-      if (current - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL || current === total) {
-        lastProgressUpdate = current;
-
-        const elapsed = Date.now() - (currentScan.startTime || Date.now());
-        const storesPerSecond = current / (elapsed / 1000);
-        const remainingStores = total - current;
-        const estimatedTimeRemaining = remainingStores / storesPerSecond;
-
-        const embed = new EmbedBuilder()
-          .setColor(0x0099FF)
-          .setTitle('📊 Background Scan Progress')
-          .setDescription(`Currently scanning: ${storeName}`)
-          .addFields(
-            { name: 'Progress', value: `${current.toLocaleString()}/${total.toLocaleString()} (${((current/total)*100).toFixed(1)}%)`, inline: true },
-            { name: 'Speed', value: `${storesPerSecond.toFixed(1)} stores/sec`, inline: true },
-            { name: 'ETA', value: formatTime(estimatedTimeRemaining), inline: true },
-            { name: 'Successful', value: currentScan.successfulScans.toLocaleString(), inline: true },
-            { name: 'Failed', value: currentScan.failedScans.toLocaleString(), inline: true },
-            { name: 'Free Products Found', value: currentScan.totalFreeProducts.toLocaleString(), inline: true }
-          )
-          .setTimestamp();
-
-        if (adminChannel) {
-          await adminChannel.send({ embeds: [embed] });
-        }
-
-        // Update database
-        await storage.updateBackgroundScan(scanId, {
-          scannedStores: current,
-          successfulScans: currentScan.successfulScans,
-          failedScans: currentScan.failedScans,
-          storesWithFreeProducts: currentScan.storesWithFreeProducts,
-          totalFreeProducts: currentScan.totalFreeProducts,
-        });
-      }
-    };
-
-    // Run the scan with rolling concurrent queue
-    const batchResult = await scanMultipleStores(storeUrls, onProgress, 10);
-
-    // Update final statistics
-    currentScan.successfulScans = batchResult.successfulScans;
-    currentScan.failedScans = batchResult.failedScans;
-    currentScan.storesWithFreeProducts = batchResult.results.filter(r => r.zeroPriceProducts.length > 0).length;
-    currentScan.totalFreeProducts = batchResult.totalZeroPriceProducts;
-
-    // Save results to database
-    for (const result of batchResult.results) {
-      if (result.success && result.zeroPriceProducts.length > 0) {
-        await storage.saveScanResult({
-          storeUrl: result.storeUrl,
-          storeName: result.storeName,
-          freeProductCount: result.zeroPriceProducts.length,
-          totalProductsScanned: result.productsFound,
-          discordUsername: 'Background Scan',
-        });
-      }
-    }
-
-    // Mark as completed
-    const elapsed = Date.now() - (currentScan.startTime || Date.now());
-    await storage.updateBackgroundScan(scanId, {
-      isRunning: false,
-      completedAt: new Date(),
-      scannedStores: batchResult.totalStores,
-      successfulScans: batchResult.successfulScans,
-      failedScans: batchResult.failedScans,
-      storesWithFreeProducts: currentScan.storesWithFreeProducts,
-      totalFreeProducts: batchResult.totalZeroPriceProducts,
-    });
-
-    // Send completion notification
-    if (adminChannel) {
+    // Fetch admin channel inside try block
+    try {
+      adminChannel = await discordClient.channels.fetch(ADMIN_CHANNEL_ID) as TextChannel;
+      
+      // Send initial notification
       const embed = new EmbedBuilder()
         .setColor(0x00FF00)
-        .setTitle('✅ Background Scan Completed')
-        .setDescription('All stores have been scanned!')
+        .setTitle('🚀 Background Scan Started')
+        .setDescription(`Scanning ${storeUrls.length.toLocaleString()} stores from stores.txt`)
         .addFields(
-          { name: 'Total Stores', value: batchResult.totalStores.toLocaleString(), inline: true },
-          { name: 'Successful', value: batchResult.successfulScans.toLocaleString(), inline: true },
-          { name: 'Failed', value: batchResult.failedScans.toLocaleString(), inline: true },
-          { name: 'Stores with Free Products', value: currentScan.storesWithFreeProducts.toLocaleString(), inline: true },
-          { name: 'Total Free Products', value: batchResult.totalZeroPriceProducts.toLocaleString(), inline: true },
-          { name: 'Time Elapsed', value: formatTime(elapsed / 1000), inline: true }
+          { name: 'Total Stores', value: storeUrls.length.toLocaleString(), inline: true },
+          { name: 'Workers', value: CONCURRENT_WORKERS.toString(), inline: true },
+          { name: 'Status', value: 'Running...', inline: true }
         )
         .setTimestamp();
 
       await adminChannel.send({ embeds: [embed] });
+    } catch (channelError) {
+      console.warn('⚠️  Could not fetch admin channel, progress updates will be logged only:', channelError);
+      adminChannel = null; // Continue without channel updates
     }
 
-    console.log(`✅ Background scan completed: ${batchResult.totalStores} stores in ${formatTime(elapsed / 1000)}`);
+    // Memory-efficient scanning: process stores in streaming fashion
+    // Use a rolling queue but DON'T accumulate all results
+    const queue = [...storeUrls];
+    let completed = 0;
+
+    const worker = async (workerId: number): Promise<void> => {
+      while (queue.length > 0) {
+        const url = queue.shift();
+        if (!url) break;
+
+        const originalIndex = storeUrls.indexOf(url);
+
+        try {
+          // Scan single store
+          const result = await scanShopifyStore(url);
+          
+          completed++;
+          currentScan.scannedStores = completed;
+
+          if (result.success) {
+            currentScan.successfulScans++;
+            
+            // Only save stores with free products (memory efficient)
+            if (result.zeroPriceProducts.length > 0) {
+              currentScan.storesWithFreeProducts++;
+              currentScan.totalFreeProducts += result.zeroPriceProducts.length;
+
+              // Save to database immediately (streaming approach)
+              await storage.saveScanResult({
+                storeUrl: result.storeUrl,
+                storeName: result.storeName,
+                freeProductCount: result.zeroPriceProducts.length,
+                totalProductsScanned: result.productsFound,
+                discordUsername: 'Background Scan',
+              });
+            }
+          } else {
+            currentScan.failedScans++;
+          }
+
+          // Send progress update every PROGRESS_UPDATE_INTERVAL stores
+          if (completed - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL || completed === storeUrls.length) {
+            lastProgressUpdate = completed;
+
+            const elapsed = Date.now() - (currentScan.startTime || Date.now());
+            const storesPerSecond = completed / (elapsed / 1000);
+            const remainingStores = storeUrls.length - completed;
+            const estimatedTimeRemaining = storesPerSecond > 0 ? remainingStores / storesPerSecond : 0;
+
+            console.log(`📊 Progress: ${completed}/${storeUrls.length} (${((completed/storeUrls.length)*100).toFixed(1)}%) - ${storesPerSecond.toFixed(1)} stores/sec`);
+
+            // Update database
+            await storage.updateBackgroundScan(scanId, {
+              scannedStores: completed,
+              successfulScans: currentScan.successfulScans,
+              failedScans: currentScan.failedScans,
+              storesWithFreeProducts: currentScan.storesWithFreeProducts,
+              totalFreeProducts: currentScan.totalFreeProducts,
+            });
+
+            // Send Discord update if channel available
+            if (adminChannel) {
+              try {
+                const embed = new EmbedBuilder()
+                  .setColor(0x0099FF)
+                  .setTitle('📊 Background Scan Progress')
+                  .setDescription(`Currently processing stores...`)
+                  .addFields(
+                    { name: 'Progress', value: `${completed.toLocaleString()}/${storeUrls.length.toLocaleString()} (${((completed/storeUrls.length)*100).toFixed(1)}%)`, inline: true },
+                    { name: 'Speed', value: `${storesPerSecond.toFixed(1)} stores/sec`, inline: true },
+                    { name: 'ETA', value: formatTime(estimatedTimeRemaining), inline: true },
+                    { name: 'Successful', value: currentScan.successfulScans.toLocaleString(), inline: true },
+                    { name: 'Failed', value: currentScan.failedScans.toLocaleString(), inline: true },
+                    { name: 'Free Products Found', value: currentScan.totalFreeProducts.toLocaleString(), inline: true }
+                  )
+                  .setTimestamp();
+
+                await adminChannel.send({ embeds: [embed] });
+              } catch (discordError) {
+                console.warn('⚠️  Could not send progress update to Discord:', discordError);
+                // Don't fail the scan if Discord update fails
+              }
+            }
+          }
+
+        } catch (storeError) {
+          // Handle per-store errors gracefully - don't let one store kill the whole scan
+          console.error(`❌ Error scanning store ${url}:`, storeError);
+          completed++;
+          currentScan.scannedStores = completed;
+          currentScan.failedScans++;
+          // Continue with next store
+        }
+      }
+    };
+
+    // Start concurrent workers
+    const workers = Array(CONCURRENT_WORKERS).fill(null).map((_, i) => worker(i));
+    await Promise.all(workers);
+
+    // Scan completed successfully
+    const elapsed = Date.now() - (currentScan.startTime || Date.now());
+    
+    await storage.updateBackgroundScan(scanId, {
+      isRunning: false,
+      completedAt: new Date(),
+      scannedStores: completed,
+      successfulScans: currentScan.successfulScans,
+      failedScans: currentScan.failedScans,
+      storesWithFreeProducts: currentScan.storesWithFreeProducts,
+      totalFreeProducts: currentScan.totalFreeProducts,
+    });
+
+    console.log(`✅ Background scan completed: ${completed} stores in ${formatTime(elapsed / 1000)}`);
+
+    // Send completion notification
+    if (adminChannel) {
+      try {
+        const embed = new EmbedBuilder()
+          .setColor(0x00FF00)
+          .setTitle('✅ Background Scan Completed')
+          .setDescription('All stores have been scanned!')
+          .addFields(
+            { name: 'Total Stores', value: completed.toLocaleString(), inline: true },
+            { name: 'Successful', value: currentScan.successfulScans.toLocaleString(), inline: true },
+            { name: 'Failed', value: currentScan.failedScans.toLocaleString(), inline: true },
+            { name: 'Stores with Free Products', value: currentScan.storesWithFreeProducts.toLocaleString(), inline: true },
+            { name: 'Total Free Products', value: currentScan.totalFreeProducts.toLocaleString(), inline: true },
+            { name: 'Time Elapsed', value: formatTime(elapsed / 1000), inline: true }
+          )
+          .setTimestamp();
+
+        await adminChannel.send({ embeds: [embed] });
+      } catch (discordError) {
+        console.warn('⚠️  Could not send completion notification to Discord:', discordError);
+      }
+    }
 
   } catch (error) {
+    // Fatal error in scan
     console.error('Background scan failed:', error);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-    // Update database with error
-    await storage.updateBackgroundScan(scanId, {
-      isRunning: false,
-      completedAt: new Date(),
-      errorMessage,
-    });
+    // Try to update database with error
+    try {
+      await storage.updateBackgroundScan(scanId, {
+        isRunning: false,
+        completedAt: new Date(),
+        errorMessage,
+      });
+    } catch (dbError) {
+      console.error('Failed to update database after error:', dbError);
+    }
 
-    // Send error notification
+    // Try to send error notification
     if (adminChannel) {
-      const embed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('❌ Background Scan Failed')
-        .setDescription(`Error: ${errorMessage}`)
-        .addFields(
-          { name: 'Scanned Before Error', value: currentScan.scannedStores.toLocaleString(), inline: true },
-          { name: 'Total Stores', value: currentScan.totalStores.toLocaleString(), inline: true }
-        )
-        .setTimestamp();
+      try {
+        const embed = new EmbedBuilder()
+          .setColor(0xFF0000)
+          .setTitle('❌ Background Scan Failed')
+          .setDescription(`Error: ${errorMessage}`)
+          .addFields(
+            { name: 'Scanned Before Error', value: currentScan.scannedStores.toLocaleString(), inline: true },
+            { name: 'Total Stores', value: currentScan.totalStores.toLocaleString(), inline: true }
+          )
+          .setTimestamp();
 
-      await adminChannel.send({ embeds: [embed] });
+        await adminChannel.send({ embeds: [embed] });
+      } catch (discordError) {
+        console.warn('⚠️  Could not send error notification to Discord:', discordError);
+      }
     }
   } finally {
-    // Reset state
+    // ALWAYS reset state, even on error - prevents stuck "isRunning" status
     currentScan.isRunning = false;
   }
 }
