@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pgTable, serial, varchar, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, integer, timestamp, boolean, text } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
 // Database Tables
@@ -13,15 +13,46 @@ export const scanResults = pgTable("scan_results", {
   scannedAt: timestamp("scanned_at").notNull().defaultNow(),
 });
 
+export const backgroundScans = pgTable("background_scans", {
+  id: serial("id").primaryKey(),
+  filename: varchar("filename", { length: 255 }).notNull(),
+  totalStores: integer("total_stores").notNull(),
+  scannedStores: integer("scanned_stores").notNull().default(0),
+  successfulScans: integer("successful_scans").notNull().default(0),
+  failedScans: integer("failed_scans").notNull().default(0),
+  storesWithFreeProducts: integer("stores_with_free_products").notNull().default(0),
+  totalFreeProducts: integer("total_free_products").notNull().default(0),
+  isRunning: boolean("is_running").notNull().default(true),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  startedBy: varchar("started_by", { length: 100 }).notNull(),
+  errorMessage: text("error_message"),
+});
+
 // Insert schemas
 export const insertScanResultSchema = createInsertSchema(scanResults).omit({
   id: true,
   scannedAt: true,
 });
 
+export const insertBackgroundScanSchema = createInsertSchema(backgroundScans).omit({
+  id: true,
+  scannedStores: true,
+  successfulScans: true,
+  failedScans: true,
+  storesWithFreeProducts: true,
+  totalFreeProducts: true,
+  isRunning: true,
+  startedAt: true,
+  completedAt: true,
+  errorMessage: true,
+});
+
 // Types
 export type ScanResultRecord = typeof scanResults.$inferSelect;
 export type InsertScanResult = z.infer<typeof insertScanResultSchema>;
+export type BackgroundScan = typeof backgroundScans.$inferSelect;
+export type InsertBackgroundScan = z.infer<typeof insertBackgroundScanSchema>;
 
 // Shopify Product Variant Schema
 export const shopifyVariantSchema = z.object({
