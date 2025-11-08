@@ -17,6 +17,7 @@ import { getUncachableDiscordClient } from './discord-client';
 import { scanShopifyStore, scanMultipleStores } from './shopify-scanner';
 import type { ScanResult, BatchScanResponse, ZeroPriceProduct } from '@shared/schema';
 import { storage } from './storage';
+import { startBackgroundScan, getBackgroundScanStatus } from './background-scanner';
 
 let client: Client | null = null;
 
@@ -51,6 +52,10 @@ export async function startBot() {
             await handleScanCommand(interaction);
           } else if (interaction.commandName === 'scanbatch') {
             await handleScanBatchCommand(interaction);
+          } else if (interaction.commandName === 'startscan') {
+            await handleStartScanCommand(interaction);
+          } else if (interaction.commandName === 'scanstatus') {
+            await handleScanStatusCommand(interaction);
           }
         } else if (interaction.isButton()) {
           await handleButtonInteraction(interaction);
@@ -108,6 +113,12 @@ async function registerCommands() {
           .setDescription('Text file with store URLs (one per line, max 25)')
           .setRequired(true)
       ),
+    new SlashCommandBuilder()
+      .setName('startscan')
+      .setDescription('Start background scan of all stores in server/stores.txt'),
+    new SlashCommandBuilder()
+      .setName('scanstatus')
+      .setDescription('Check the status of the current background scan'),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(client.token!);
@@ -969,6 +980,145 @@ function createBatchNavigationEmbed(
   components.push(bulkRow);
   
   return { embed, components };
+}
+
+async function handleStartScanCommand(interaction: ChatInputCommandInteraction) {
+  // Check if user has required role
+  if (!interaction.member || !('roles' in interaction.member)) {
+    await interaction.reply({ 
+      content: '❌ Unable to verify your roles.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  const memberRoles = interaction.member.roles;
+  const hasRole = Array.isArray(memberRoles) 
+    ? memberRoles.includes(REQUIRED_ROLE_ID)
+    : 'cache' in memberRoles && memberRoles.cache.has(REQUIRED_ROLE_ID);
+
+  if (!hasRole) {
+    await interaction.reply({ 
+      content: '❌ You do not have permission to use this command.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  // Defer reply immediately since file operations might take time
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+  try {
+    if (!client) {
+      await interaction.editReply('❌ Bot client not initialized');
+      return;
+    }
+
+    const result = await startBackgroundScan(client, interaction.user.username);
+
+    if (result.success) {
+      await interaction.editReply(`✅ ${result.message}`);
+    } else {
+      await interaction.editReply(`❌ ${result.message}`);
+    }
+  } catch (error) {
+    console.error('Error starting background scan:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    await interaction.editReply(`❌ Failed to start background scan: ${errorMessage}`);
+  }
+}
+
+async function handleScanStatusCommand(interaction: ChatInputCommandInteraction) {
+  // Check if user has required role
+  if (!interaction.member || !('roles' in interaction.member)) {
+    await interaction.reply({ 
+      content: '❌ Unable to verify your roles.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  const memberRoles = interaction.member.roles;
+  const hasRole = Array.isArray(memberRoles) 
+    ? memberRoles.includes(REQUIRED_ROLE_ID)
+    : 'cache' in memberRoles && memberRoles.cache.has(REQUIRED_ROLE_ID);
+
+  if (!hasRole) {
+    await interaction.reply({ 
+      content: '❌ You do not have permission to use this command.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  const status = getBackgroundScanStatus();
+
+  if (!status.isRunning) {
+    await interaction.reply({ 
+      content: '📊 No background scan is currently running.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  const elapsed = status.startTime ? (Date.now() - status.startTime) / 1000 : 0;
+  const storesPerSecond = elapsed > 0 ? status.scannedStores / elapsed : 0;
+  const remainingStores = status.totalStores - status.scannedStores;
+  const estimatedTimeRemaining = storesPerSecond > 0 ? remainingStores / storesPerSecond : 0;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x0099FF)
+    .setTitle('📊 Background Scan Status')
+    .setDescription('Current background scan progress')
+    .addFields(
+      { 
+        name: 'Progress', 
+        value: `${status.scannedStores.toLocaleString()}/${status.totalStores.toLocaleString()} (${((status.scannedStores/status.totalStores)*100).toFixed(1)}%)`, 
+        inline: true 
+      },
+      { 
+        name: 'Speed', 
+        value: `${storesPerSecond.toFixed(1)} stores/sec`, 
+        inline: true 
+      },
+      { 
+        name: 'ETA', 
+        value: formatTime(estimatedTimeRemaining), 
+        inline: true 
+      },
+      { 
+        name: 'Successful', 
+        value: status.successfulScans.toLocaleString(), 
+        inline: true 
+      },
+      { 
+        name: 'Failed', 
+        value: status.failedScans.toLocaleString(), 
+        inline: true 
+      },
+      { 
+        name: 'Free Products Found', 
+        value: status.totalFreeProducts.toLocaleString(), 
+        inline: true 
+      }
+    )
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+}
+
+function formatTime(seconds: number): string {
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`;
+  } else if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${mins}m ${secs}s`;
+  } else {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${mins}m`;
+  }
 }
 
 export async function stopBot() {
