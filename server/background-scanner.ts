@@ -6,7 +6,9 @@ import type { Client, TextChannel } from 'discord.js';
 import { EmbedBuilder } from 'discord.js';
 
 const ADMIN_CHANNEL_ID = '1434557891318124798';
+const PUBLIC_RESULTS_CHANNEL_ID = '1436850851103768576'; // Public channel for free product announcements
 const PROGRESS_UPDATE_INTERVAL = 1000; // Send update every 1000 stores
+const PUBLIC_UPDATE_INTERVAL = 120000; // Send public updates every 2 minutes (in ms)
 const STORES_FILE_PATH = path.join(process.cwd(), 'server', 'stores.txt');
 const CONCURRENT_WORKERS = 10;
 
@@ -134,7 +136,12 @@ export async function startBackgroundScan(discordClient: Client, startedBy: stri
 
 async function runBackgroundScan(storeUrls: string[], discordClient: Client, scanId: number) {
   let adminChannel: TextChannel | null = null;
+  let publicChannel: TextChannel | null = null;
   let lastProgressUpdate = 0;
+  let lastPublicUpdate = Date.now();
+  
+  // Buffer for stores with free products found since last public update
+  let publicUpdateBuffer: Array<{ storeName: string; freeProductCount: number }> = [];
 
   try {
     // Fetch admin channel inside try block
@@ -157,6 +164,15 @@ async function runBackgroundScan(storeUrls: string[], discordClient: Client, sca
     } catch (channelError) {
       console.warn('⚠️  Could not fetch admin channel, progress updates will be logged only:', channelError);
       adminChannel = null; // Continue without channel updates
+    }
+
+    // Fetch public results channel
+    try {
+      publicChannel = await discordClient.channels.fetch(PUBLIC_RESULTS_CHANNEL_ID) as TextChannel;
+      console.log('✅ Connected to public results channel');
+    } catch (channelError) {
+      console.warn('⚠️  Could not fetch public results channel:', channelError);
+      publicChannel = null; // Continue without public updates
     }
 
     // Memory-efficient scanning: process stores in streaming fashion
@@ -194,6 +210,20 @@ async function runBackgroundScan(storeUrls: string[], discordClient: Client, sca
                 totalProductsScanned: result.productsFound,
                 discordUsername: 'Background Scan',
               });
+
+              // Add to public update buffer
+              publicUpdateBuffer.push({
+                storeName: result.storeName,
+                freeProductCount: result.zeroPriceProducts.length,
+              });
+
+              // Check if it's time to send public update
+              const timeSinceLastPublicUpdate = Date.now() - lastPublicUpdate;
+              if (publicChannel && publicUpdateBuffer.length > 0 && timeSinceLastPublicUpdate >= PUBLIC_UPDATE_INTERVAL) {
+                await sendPublicUpdate(publicChannel, publicUpdateBuffer);
+                publicUpdateBuffer = []; // Clear buffer
+                lastPublicUpdate = Date.now();
+              }
             }
           } else {
             currentScan.failedScans++;
@@ -258,6 +288,12 @@ async function runBackgroundScan(storeUrls: string[], discordClient: Client, sca
     // Start concurrent workers
     const workers = Array(CONCURRENT_WORKERS).fill(null).map((_, i) => worker(i));
     await Promise.all(workers);
+
+    // Send any remaining public updates before completing
+    if (publicChannel && publicUpdateBuffer.length > 0) {
+      await sendPublicUpdate(publicChannel, publicUpdateBuffer);
+      publicUpdateBuffer = [];
+    }
 
     // Scan completed (either finished or stopped early)
     const elapsed = Date.now() - (currentScan.startTime || Date.now());
@@ -341,6 +377,53 @@ async function runBackgroundScan(storeUrls: string[], discordClient: Client, sca
   } finally {
     // ALWAYS reset state, even on error - prevents stuck "isRunning" status
     currentScan.isRunning = false;
+  }
+}
+
+async function sendPublicUpdate(
+  publicChannel: TextChannel,
+  stores: Array<{ storeName: string; freeProductCount: number }>
+): Promise<void> {
+  if (stores.length === 0) return;
+
+  try {
+    // Sort by number of free products (highest first)
+    const sortedStores = [...stores].sort((a, b) => b.freeProductCount - a.freeProductCount);
+
+    // Create a formatted table
+    const maxStores = Math.min(sortedStores.length, 20); // Limit to top 20 stores
+    const tableRows = sortedStores.slice(0, maxStores).map((store, index) => {
+      // Truncate store name if too long
+      const storeName = store.storeName.length > 30 
+        ? store.storeName.substring(0, 27) + '...' 
+        : store.storeName;
+      return `${index + 1}. **${storeName}** - ${store.freeProductCount} free items`;
+    });
+
+    const totalFreeItems = sortedStores.reduce((sum, s) => sum + s.freeProductCount, 0);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x00D9FF) // Bright cyan
+      .setTitle('🎁 Free Products Found!')
+      .setDescription(
+        `Found **${totalFreeItems} free products** across **${stores.length} stores** in the last ${PUBLIC_UPDATE_INTERVAL / 1000 / 60} minutes!\n\n` +
+        '🔒 *Want full access to all products and stores? Subscribe for instant notifications and direct links!*'
+      )
+      .addFields({
+        name: '📊 Top Stores with Free Items',
+        value: tableRows.join('\n') || 'No stores found',
+      })
+      .setFooter({ 
+        text: stores.length > maxStores 
+          ? `Showing top ${maxStores} of ${stores.length} stores • Subscribe for full access!` 
+          : 'Subscribe for instant access to all free products!'
+      })
+      .setTimestamp();
+
+    await publicChannel.send({ embeds: [embed] });
+    console.log(`📢 Sent public update: ${stores.length} stores with ${totalFreeItems} free products`);
+  } catch (error) {
+    console.error('❌ Failed to send public update:', error);
   }
 }
 
