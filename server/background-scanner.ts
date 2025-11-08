@@ -407,7 +407,9 @@ async function sendPublicUpdate(
       .setTitle('🎁 Free Products Found!')
       .setDescription(
         `Found **${totalFreeItems} free products** across **${stores.length} stores** in the last ${PUBLIC_UPDATE_INTERVAL / 1000 / 60} minutes!\n\n` +
-        '🔒 *Want full access to all products and stores? Subscribe for instant notifications and direct links!*'
+        '🔒 **Want full access to all products and stores?**\n' +
+        '✨ Subscribe for instant notifications, product details, and direct add-to-cart links!\n\n' +
+        '🔗 **[Subscribe Now on Whop](https://whop.com/discord-access-e8-512c/you-will-be-freebies/)**'
       )
       .addFields({
         name: '📊 Top Stores with Free Items',
