@@ -17,7 +17,7 @@ import { getUncachableDiscordClient } from './discord-client';
 import { scanShopifyStore, scanMultipleStores } from './shopify-scanner';
 import type { ScanResult, BatchScanResponse, ZeroPriceProduct } from '@shared/schema';
 import { storage } from './storage';
-import { startBackgroundScan, getBackgroundScanStatus } from './background-scanner';
+import { startBackgroundScan, getBackgroundScanStatus, stopBackgroundScan } from './background-scanner';
 
 let client: Client | null = null;
 
@@ -54,6 +54,8 @@ export async function startBot() {
             await handleScanBatchCommand(interaction);
           } else if (interaction.commandName === 'startscan') {
             await handleStartScanCommand(interaction);
+          } else if (interaction.commandName === 'stopscan') {
+            await handleStopScanCommand(interaction);
           } else if (interaction.commandName === 'scanstatus') {
             await handleScanStatusCommand(interaction);
           }
@@ -115,10 +117,13 @@ async function registerCommands() {
       ),
     new SlashCommandBuilder()
       .setName('startscan')
-      .setDescription('Start background scan of all stores in server/stores.txt'),
+      .setDescription('[Admin Channel Only] Start background scan of all stores in server/stores.txt'),
+    new SlashCommandBuilder()
+      .setName('stopscan')
+      .setDescription('[Admin Channel Only] Stop the currently running background scan'),
     new SlashCommandBuilder()
       .setName('scanstatus')
-      .setDescription('Check the status of the current background scan'),
+      .setDescription('[Admin Channel Only] Check the status of the current background scan'),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(client.token!);
@@ -983,6 +988,15 @@ function createBatchNavigationEmbed(
 }
 
 async function handleStartScanCommand(interaction: ChatInputCommandInteraction) {
+  // Check if command is used in admin channel
+  if (interaction.channelId !== ADMIN_CHANNEL_ID) {
+    await interaction.reply({ 
+      content: '❌ This command can only be used in the admin channel.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
   // Check if user has required role
   if (!interaction.member || !('roles' in interaction.member)) {
     await interaction.reply({ 
@@ -1028,7 +1042,57 @@ async function handleStartScanCommand(interaction: ChatInputCommandInteraction) 
   }
 }
 
+async function handleStopScanCommand(interaction: ChatInputCommandInteraction) {
+  // Check if command is used in admin channel
+  if (interaction.channelId !== ADMIN_CHANNEL_ID) {
+    await interaction.reply({ 
+      content: '❌ This command can only be used in the admin channel.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  // Check if user has required role
+  if (!interaction.member || !('roles' in interaction.member)) {
+    await interaction.reply({ 
+      content: '❌ Unable to verify your roles.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  const memberRoles = interaction.member.roles;
+  const hasRole = Array.isArray(memberRoles) 
+    ? memberRoles.includes(REQUIRED_ROLE_ID)
+    : 'cache' in memberRoles && memberRoles.cache.has(REQUIRED_ROLE_ID);
+
+  if (!hasRole) {
+    await interaction.reply({ 
+      content: '❌ You do not have permission to use this command.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
+  const result = stopBackgroundScan();
+
+  if (result.success) {
+    await interaction.reply({ content: `⏹️ ${result.message}`, flags: [MessageFlags.Ephemeral] });
+  } else {
+    await interaction.reply({ content: `❌ ${result.message}`, flags: [MessageFlags.Ephemeral] });
+  }
+}
+
 async function handleScanStatusCommand(interaction: ChatInputCommandInteraction) {
+  // Check if command is used in admin channel
+  if (interaction.channelId !== ADMIN_CHANNEL_ID) {
+    await interaction.reply({ 
+      content: '❌ This command can only be used in the admin channel.', 
+      flags: [MessageFlags.Ephemeral] 
+    });
+    return;
+  }
+
   // Check if user has required role
   if (!interaction.member || !('roles' in interaction.member)) {
     await interaction.reply({ 

@@ -20,6 +20,7 @@ interface BackgroundScanState {
   failedScans: number;
   storesWithFreeProducts: number;
   totalFreeProducts: number;
+  stopRequested: boolean;
 }
 
 let currentScan: BackgroundScanState = {
@@ -32,10 +33,27 @@ let currentScan: BackgroundScanState = {
   failedScans: 0,
   storesWithFreeProducts: 0,
   totalFreeProducts: 0,
+  stopRequested: false,
 };
 
 export function getBackgroundScanStatus(): BackgroundScanState {
   return { ...currentScan };
+}
+
+export function stopBackgroundScan(): { success: boolean; message: string } {
+  if (!currentScan.isRunning) {
+    return {
+      success: false,
+      message: 'No background scan is currently running.',
+    };
+  }
+
+  currentScan.stopRequested = true;
+  
+  return {
+    success: true,
+    message: `Stop requested for background scan. The scan will stop gracefully after completing current stores.\nProgress: ${currentScan.scannedStores}/${currentScan.totalStores} stores scanned so far.`,
+  };
 }
 
 export async function startBackgroundScan(discordClient: Client, startedBy: string): Promise<{ success: boolean; message: string; scanId?: number }> {
@@ -97,6 +115,7 @@ export async function startBackgroundScan(discordClient: Client, startedBy: stri
     failedScans: 0,
     storesWithFreeProducts: 0,
     totalFreeProducts: 0,
+    stopRequested: false,
   };
 
   console.log(`🚀 Background scan started: ${storeUrls.length} stores to scan`);
@@ -146,7 +165,7 @@ async function runBackgroundScan(storeUrls: string[], discordClient: Client, sca
     let completed = 0;
 
     const worker = async (workerId: number): Promise<void> => {
-      while (queue.length > 0) {
+      while (queue.length > 0 && !currentScan.stopRequested) {
         const url = queue.shift();
         if (!url) break;
 
@@ -240,8 +259,9 @@ async function runBackgroundScan(storeUrls: string[], discordClient: Client, sca
     const workers = Array(CONCURRENT_WORKERS).fill(null).map((_, i) => worker(i));
     await Promise.all(workers);
 
-    // Scan completed successfully
+    // Scan completed (either finished or stopped early)
     const elapsed = Date.now() - (currentScan.startTime || Date.now());
+    const wasStopped = currentScan.stopRequested;
     
     await storage.updateBackgroundScan(scanId, {
       isRunning: false,
@@ -251,19 +271,24 @@ async function runBackgroundScan(storeUrls: string[], discordClient: Client, sca
       failedScans: currentScan.failedScans,
       storesWithFreeProducts: currentScan.storesWithFreeProducts,
       totalFreeProducts: currentScan.totalFreeProducts,
+      errorMessage: wasStopped ? 'Stopped by user request' : undefined,
     });
 
-    console.log(`✅ Background scan completed: ${completed} stores in ${formatTime(elapsed / 1000)}`);
+    if (wasStopped) {
+      console.log(`⏹️  Background scan stopped: ${completed} stores scanned in ${formatTime(elapsed / 1000)}`);
+    } else {
+      console.log(`✅ Background scan completed: ${completed} stores in ${formatTime(elapsed / 1000)}`);
+    }
 
     // Send completion notification
     if (adminChannel) {
       try {
         const embed = new EmbedBuilder()
-          .setColor(0x00FF00)
-          .setTitle('✅ Background Scan Completed')
-          .setDescription('All stores have been scanned!')
+          .setColor(wasStopped ? 0xFFA500 : 0x00FF00)
+          .setTitle(wasStopped ? '⏹️ Background Scan Stopped' : '✅ Background Scan Completed')
+          .setDescription(wasStopped ? 'Scan was stopped by user request.' : 'All stores have been scanned!')
           .addFields(
-            { name: 'Total Stores', value: completed.toLocaleString(), inline: true },
+            { name: 'Stores Scanned', value: `${completed.toLocaleString()}/${storeUrls.length.toLocaleString()}`, inline: true },
             { name: 'Successful', value: currentScan.successfulScans.toLocaleString(), inline: true },
             { name: 'Failed', value: currentScan.failedScans.toLocaleString(), inline: true },
             { name: 'Stores with Free Products', value: currentScan.storesWithFreeProducts.toLocaleString(), inline: true },
